@@ -1,16 +1,19 @@
 {
   "name": "filmila-webapp",
   "version": "1.0.0",
-  "engines": {
-    "node": "20.x",
-    "npm": "10.x"
-  },
-  "cacheDirectories": [
-    "frontend/node_modules"
-  ],
+  "description": "Independent Film Streaming Platform",
+  "main": "app.py",
   "scripts": {
-    "postinstall": "cd frontend && npm install",
-    "build": "cd frontend && npm run build",
-    "start": "gunicorn wsgi:app"
+    "start": "cd frontend && npm start",
+    "build": "cd frontend && npm install && npm run build",
+    "test": "cd frontend && npm test",
+    "eject": "cd frontend && npm run eject"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "dependencies": {
+    "concurrently": "^8.0.1"
   }
 }
