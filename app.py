@@ -6,6 +6,11 @@ import os
 import stripe
 from datetime import datetime
 from dotenv import load_dotenv
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -19,9 +24,17 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
+# Log configuration
+logger.info(f"ALLOWED_ORIGINS: {os.getenv('ALLOWED_ORIGINS')}")
+logger.info(f"Database URL: {app.config['SQLALCHEMY_DATABASE_URI']}")
+logger.info(f"Upload folder: {app.config['UPLOAD_FOLDER']}")
+
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
+
+# Ensure upload directory exists
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Models
 class User(UserMixin, db.Model):
@@ -129,5 +142,9 @@ def serve_path(path):
 
 if __name__ == '__main__':
     with app.app_context():
-        db.create_all()
-    app.run(debug=True)
+        try:
+            db.create_all()
+            logger.info("Database tables created successfully")
+        except Exception as e:
+            logger.error(f"Error creating database tables: {e}")
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
