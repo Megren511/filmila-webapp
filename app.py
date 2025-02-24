@@ -5,15 +5,19 @@ from flask_cors import CORS
 import os
 import stripe
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__, static_folder='frontend/build', static_url_path='/')
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": os.getenv('ALLOWED_ORIGINS', '*')}})
 
 # Configuration
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///filmila.db'
-app.config['UPLOAD_FOLDER'] = 'uploads'
-stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///filmila.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')
+stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
 db = SQLAlchemy(app)
 login_manager = LoginManager()
