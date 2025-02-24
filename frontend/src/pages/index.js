@@ -1,6 +1,6 @@
-import Navigation from "@/components/Navigation";
-import FilmCard from "@/components/FilmCard";
-import { Button } from "@/components/ui/button";
+import Navigation from "../components/Navigation";
+import FilmCard from "../components/FilmCard";
+import { Button } from "../components/ui/button";
 
 const mockFilms = [
   {
