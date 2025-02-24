@@ -2,10 +2,15 @@
   "name": "filmila-webapp",
   "version": "1.0.0",
   "engines": {
-    "node": "20.x"
+    "node": "20.x",
+    "npm": "10.x"
   },
+  "cacheDirectories": [
+    "frontend/node_modules"
+  ],
   "scripts": {
-    "build": "cd frontend && npm install && npm run build",
+    "postinstall": "cd frontend && npm install",
+    "build": "cd frontend && npm run build",
     "start": "gunicorn wsgi:app"
   }
 }
