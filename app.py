@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-app = Flask(__name__, static_folder='frontend/build', static_url_path='/')
+app = Flask(__name__, static_folder='frontend/build', static_url_path='')
 CORS(app, resources={r"/api/*": {"origins": os.getenv('ALLOWED_ORIGINS', '*')}})
 
 # Configuration
@@ -130,6 +130,10 @@ def watch_film(film_id):
 # Serve React App
 @app.route('/')
 def serve():
+    return send_from_directory(app.static_folder, 'index.html')
+
+@app.errorhandler(404)
+def not_found(e):
     return send_from_directory(app.static_folder, 'index.html')
 
 @app.route('/<path:path>')
