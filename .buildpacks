@@ -1,2 +1,2 @@
-heroku/nodejs
-heroku/python
+heroku/nodejs@20
+heroku/python@3.11.7

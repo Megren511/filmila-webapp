@@ -14,15 +14,26 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
+# Ensure instance folder exists
+instance_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
+if not os.path.exists(instance_path):
+    os.makedirs(instance_path)
+    logger.info(f"Created instance directory at {instance_path}")
+
 app = Flask(__name__, static_folder='frontend/build', static_url_path='')
 CORS(app, resources={r"/api/*": {"origins": os.getenv('ALLOWED_ORIGINS', '*')}})
 
 # Configuration
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///filmila.db')
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev_secret_key_f1lm1l4_w3b4pp_2025')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///instance/filmila.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+
+# Ensure upload folder exists
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
+    logger.info(f"Created upload directory at {app.config['UPLOAD_FOLDER']}")
 
 # Log configuration
 logger.info(f"ALLOWED_ORIGINS: {os.getenv('ALLOWED_ORIGINS')}")
@@ -32,9 +43,6 @@ logger.info(f"Upload folder: {app.config['UPLOAD_FOLDER']}")
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
-
-# Ensure upload directory exists
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Models
 class User(UserMixin, db.Model):

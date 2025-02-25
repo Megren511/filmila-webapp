@@ -1,0 +1,56 @@
+services:
+  - name: filmila-webapp
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    git:
+      repo: "https://github.com/Megren511/filmila-webapp.git"
+      branch: main
+    build_command: |
+      # Install Python dependencies
+      python -m pip install --upgrade pip
+      pip install -r requirements.txt
+      # Install and build frontend
+      npm install
+      cd frontend
+      npm install --legacy-peer-deps
+      npm run build
+      cd ..
+    run_command: gunicorn --bind 0.0.0.0:$PORT wsgi:app
+    envs:
+      # Build-time environment variables
+      - key: NODE_ENV
+        scope: BUILD_TIME
+        value: production
+      - key: REACT_APP_API_URL
+        scope: BUILD_TIME
+        value: ${_self.PUBLIC_URL}/api
+      - key: CI
+        scope: BUILD_TIME
+        value: false
+      - key: NPM_CONFIG_PRODUCTION
+        scope: BUILD_TIME
+        value: false
+      - key: PYTHON_VERSION
+        scope: BUILD_TIME
+        value: "3.11.7"
+
+      # Runtime environment variables
+      - key: PORT
+        scope: RUN_TIME
+        value: "8080"
+      - key: FLASK_APP
+        scope: RUN_TIME
+        value: app.py
+      - key: FLASK_ENV
+        scope: RUN_TIME
+        value: production
+      - key: SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: ${SECRET_KEY}
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${DATABASE_URL}  # Will be set in DigitalOcean dashboard
+      - key: GUNICORN_WORKERS
+        scope: RUN_TIME
+        value: "4"
