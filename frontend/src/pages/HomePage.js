@@ -49,7 +49,7 @@ function HomePage() {
       <HeroSection>
         <Container>
           <Typography variant="h2" component="h1" gutterBottom>
-            Welcome to Filmflicks
+            Welcome to Filmila
           </Typography>
           <Typography variant="h5" paragraph>
             Discover and support independent filmmakers
