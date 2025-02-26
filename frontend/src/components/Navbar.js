@@ -18,7 +18,7 @@ function Navbar() {
               fontWeight: 'bold',
             }}
           >
-            filmflicks
+            Filmila
           </Typography>
           <Button color="inherit" component={RouterLink} to="/films">
             Browse Films
