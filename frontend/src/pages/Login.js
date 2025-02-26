@@ -9,6 +9,7 @@ import {
   Alert,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import config from '../config';
 
 function Login() {
   const navigate = useNavigate();
@@ -31,11 +32,12 @@ function Login() {
     setError('');
 
     try {
-      const response = await fetch('/api/login', {
+      const response = await fetch(`${config.apiUrl}/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify(formData),
       });
 

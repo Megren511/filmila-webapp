@@ -64,6 +64,9 @@ function HomePage() {
         <Typography variant="h3" component="h2" gutterBottom align="center" sx={{ mb: 6 }}>
           Featured Films
         </Typography>
+        <Typography variant="h5" component="h3" gutterBottom align="center" sx={{ mb: 4 }}>
+          Coming Soon
+        </Typography>
         <Grid container spacing={4}>
           {featuredFilms.map((film, index) => (
             <Grid item xs={12} sm={6} md={4} key={index}>

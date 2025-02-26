@@ -11,6 +11,7 @@ import {
   Checkbox,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import config from '../config';
 
 function Register() {
   const navigate = useNavigate();
@@ -40,11 +41,12 @@ function Register() {
     }
 
     try {
-      const response = await fetch('/api/register', {
+      const response = await fetch(`${config.apiUrl}/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           email: formData.email,
           password: formData.password,
