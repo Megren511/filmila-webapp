@@ -6,16 +6,24 @@ services:
       repo: "https://github.com/Megren511/filmila-webapp.git"
       branch: main
     build_command: |
+      # Set Node.js version
+      . $HOME/.nvm/nvm.sh
+      nvm install 18
+      nvm use 18
+      
       # Install Python dependencies
       python -m pip install --upgrade pip
       pip install -r requirements.txt
+      
+      # Install root dependencies
+      npm ci
+      
       # Install and build frontend
-      npm install
       cd frontend
-      npm install --legacy-peer-deps
+      npm ci --legacy-peer-deps
       npm run build
       cd ..
-    run_command: gunicorn --bind 0.0.0.0:$PORT wsgi:app
+    run_command: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2
     envs:
       # Build-time environment variables
       - key: NODE_ENV
@@ -33,6 +41,9 @@ services:
       - key: PYTHON_VERSION
         scope: BUILD_TIME
         value: "3.11.7"
+      - key: NODE_VERSION
+        scope: BUILD_TIME
+        value: "18.x"
 
       # Runtime environment variables
       - key: PORT
@@ -50,7 +61,4 @@ services:
         value: ${SECRET_KEY}
       - key: DATABASE_URL
         scope: RUN_TIME
-        value: ${DATABASE_URL}  # Will be set in DigitalOcean dashboard
-      - key: GUNICORN_WORKERS
-        scope: RUN_TIME
-        value: "4"
+        value: ${DATABASE_URL}
