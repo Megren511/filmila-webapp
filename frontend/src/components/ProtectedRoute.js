@@ -2,7 +2,7 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-function ProtectedRoute({ children, requiredRole }) {
+const ProtectedRoute = ({ children, requiredRole }) => {
   const { user } = useAuth();
 
   if (!user) {
@@ -14,4 +14,6 @@ function ProtectedRoute({ children, requiredRole }) {
   }
 
   return children;
-}
+};
+
+export default ProtectedRoute;
