@@ -1,0 +1,40 @@
+name: filmila-webapp
+region: syd
+
+services:
+- name: filmila-webapp
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: Megren511/filmila-webapp
+  build_command: >
+    python -m pip install --upgrade pip &&
+    pip install -r requirements.txt &&
+    cd frontend &&
+    npm install &&
+    npm run build &&
+    cd ..
+  run_command: gunicorn --config gunicorn_config.py wsgi:app
+  environment_slug: python
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  http_port: 8080
+  envs:
+  - key: MONGODB_URI
+    scope: RUN_AND_BUILD_TIME
+    value: ${MONGODB_URI}
+  - key: JWT_SECRET_KEY
+    scope: RUN_AND_BUILD_TIME
+    value: ${JWT_SECRET_KEY}
+  - key: FRONTEND_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://www.filmila.com
+  - key: PORT
+    scope: RUN_AND_BUILD_TIME
+    value: "8080"
+  - key: DEBUG
+    scope: RUN_AND_BUILD_TIME
+    value: "False"
+  routes:
+  - path: /
+    preserve_path_prefix: true

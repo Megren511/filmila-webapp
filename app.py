@@ -15,12 +15,9 @@ from pymongo.server_api import ServerApi
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Clear any existing environment variables
-if 'MONGODB_URI' in os.environ:
-    del os.environ['MONGODB_URI']
-
-# Load environment variables
-load_dotenv(override=True)
+# Load environment variables from .env file if it exists
+if os.path.exists('.env'):
+    load_dotenv()
 
 # Check required environment variables
 required_env_vars = ['MONGODB_URI', 'JWT_SECRET_KEY']
@@ -29,6 +26,7 @@ if missing_vars:
     raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
 app = Flask(__name__, static_folder='frontend/build', static_url_path='')
+
 # Configure CORS
 CORS(app, resources={
     r"/api/*": {
@@ -289,18 +287,13 @@ def watch_film(film_id):
     return send_file(film['file_path'])
 
 # Serve React App
-@app.route('/')
-def serve():
-    return send_from_directory(app.static_folder, 'index.html')
-
+@app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
-def static_proxy(path):
-    # First, try to serve static files from the React build
-    file_path = os.path.join(app.static_folder, path)
-    if os.path.isfile(file_path):
+def serve(path):
+    if path != "" and os.path.exists(app.static_folder + '/' + path):
         return send_from_directory(app.static_folder, path)
-    # If not found, return index.html (for client-side routing)
-    return send_from_directory(app.static_folder, 'index.html')
+    else:
+        return send_from_directory(app.static_folder, 'index.html')
 
 @app.errorhandler(404)
 def not_found(e):
