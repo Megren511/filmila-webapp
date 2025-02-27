@@ -1,5 +1,4 @@
 from flask import Flask, request, jsonify, send_file, send_from_directory
-from flask_pymongo import PyMongo
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from flask_cors import CORS
 from flask_bcrypt import Bcrypt
@@ -9,6 +8,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import logging
 from bson import ObjectId
+from pymongo import MongoClient
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,16 +20,29 @@ app = Flask(__name__, static_folder='frontend/build', static_url_path='')
 CORS(app)
 
 # Configure MongoDB
-app.config["MONGO_URI"] = os.getenv("DATABASE_URL")
-mongo = PyMongo(app)
+try:
+    mongodb_uri = os.getenv("MONGODB_URI")
+    if not mongodb_uri:
+        raise ValueError("MONGODB_URI environment variable is not set")
+    
+    # Connect using pymongo directly
+    client = MongoClient(mongodb_uri)
+    db = client.filmila  # Use 'filmila' as the database name
+    
+    # Test the connection
+    client.admin.command('ping')
+    logger.info("Successfully connected to MongoDB!")
+except Exception as e:
+    logger.error(f"Failed to connect to MongoDB: {str(e)}")
+    raise
 
 # Configure JWT
-app.config["JWT_SECRET_KEY"] = os.getenv("SECRET_KEY")
+app.config["JWT_SECRET_KEY"] = os.getenv("SECRET_KEY", "default-secret-key")
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=1)
 jwt = JWTManager(app)
 
 # Configure Stripe
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 
 # Configure bcrypt
 bcrypt = Bcrypt(app)
@@ -48,14 +61,27 @@ logger.info(f"Upload folder: {app.config.get('UPLOAD_FOLDER', 'uploads')}")
 def register():
     try:
         data = request.get_json()
+        logger.info(f"Registration attempt with data: {data}")
         
         if not data or not data.get('email') or not data.get('password'):
+            logger.error("Missing email or password in request data")
             return jsonify({'message': 'Missing email or password'}), 400
             
-        if mongo.db.users.find_one({'email': data['email']}):
+        # Check if email exists
+        existing_user = db.users.find_one({'email': data['email']})
+        logger.info(f"Existing user check result: {existing_user}")
+        
+        if existing_user:
+            logger.error(f"Email already registered: {data['email']}")
             return jsonify({'message': 'Email already registered'}), 400
             
-        hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
+        # Hash password
+        try:
+            hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
+            logger.info("Password hashed successfully")
+        except Exception as e:
+            logger.error(f"Password hashing error: {str(e)}")
+            raise
         
         user_data = {
             'email': data['email'],
@@ -64,11 +90,22 @@ def register():
             'created_at': datetime.utcnow()
         }
         
-        result = mongo.db.users.insert_one(user_data)
-        user_data['_id'] = str(result.inserted_id)
+        logger.info(f"Attempting to insert user: {data['email']}")
+        try:
+            result = db.users.insert_one(user_data)
+            user_data['_id'] = str(result.inserted_id)
+            logger.info(f"User inserted successfully with ID: {result.inserted_id}")
+        except Exception as e:
+            logger.error(f"Database insertion error: {str(e)}")
+            raise
         
         # Create access token
-        access_token = create_access_token(identity=str(result.inserted_id))
+        try:
+            access_token = create_access_token(identity=str(result.inserted_id))
+            logger.info("Access token created successfully")
+        except Exception as e:
+            logger.error(f"Token creation error: {str(e)}")
+            raise
         
         return jsonify({
             'message': 'Registration successful',
@@ -81,6 +118,7 @@ def register():
         }), 201
     except Exception as e:
         logger.error(f"Registration error: {str(e)}")
+        logger.exception("Full traceback:")
         return jsonify({'message': 'An error occurred during registration'}), 500
 
 @app.route('/api/login', methods=['POST'])
@@ -92,7 +130,7 @@ def login():
         if not data or not data.get('email') or not data.get('password'):
             return jsonify({'message': 'Missing email or password'}), 400
             
-        user = mongo.db.users.find_one({'email': data['email']})
+        user = db.users.find_one({'email': data['email']})
         logger.info(f"User found: {bool(user)}")
         
         if user and bcrypt.check_password_hash(user['password'], data['password']):
@@ -118,7 +156,7 @@ def login():
 @jwt_required()
 def get_user():
     current_user_id = get_jwt_identity()
-    user = mongo.db.users.find_one({'_id': ObjectId(current_user_id)})
+    user = db.users.find_one({'_id': ObjectId(current_user_id)})
     
     if not user:
         return jsonify({'message': 'User not found'}), 404
@@ -132,7 +170,7 @@ def get_user():
 # Film routes
 @app.route('/api/films', methods=['GET'])
 def get_films():
-    films = mongo.db.films.find()
+    films = db.films.find()
     return jsonify([{
         'id': str(film['_id']),
         'title': film['title'],
@@ -147,7 +185,7 @@ def get_films():
 @jwt_required()
 def upload_film():
     current_user_id = get_jwt_identity()
-    user = mongo.db.users.find_one({'_id': ObjectId(current_user_id)})
+    user = db.users.find_one({'_id': ObjectId(current_user_id)})
     
     if not user.get('is_filmmaker'):
         return jsonify({'error': 'Unauthorized'}), 403
@@ -161,7 +199,7 @@ def upload_film():
 @app.route('/api/films/<film_id>', methods=['GET'])
 @jwt_required()
 def get_film(film_id):
-    film = mongo.db.films.find_one({'_id': ObjectId(film_id)})
+    film = db.films.find_one({'_id': ObjectId(film_id)})
     if not film:
         return jsonify({'error': 'Film not found'}), 404
         
@@ -181,7 +219,7 @@ def get_film(film_id):
 def create_payment():
     data = request.json
     film_id = data.get('film_id')
-    film = mongo.db.films.find_one({'_id': ObjectId(film_id)})
+    film = db.films.find_one({'_id': ObjectId(film_id)})
     
     if not film:
         return jsonify({'error': 'Film not found'}), 404
@@ -201,7 +239,7 @@ def create_payment():
 @jwt_required()
 def watch_film(film_id):
     current_user_id = get_jwt_identity()
-    purchase = mongo.db.purchases.find_one({
+    purchase = db.purchases.find_one({
         'user_id': ObjectId(current_user_id),
         'film_id': ObjectId(film_id)
     })
@@ -209,7 +247,7 @@ def watch_film(film_id):
     if not purchase:
         return jsonify({'error': 'Not purchased'}), 403
         
-    film = mongo.db.films.find_one({'_id': ObjectId(film_id)})
+    film = db.films.find_one({'_id': ObjectId(film_id)})
     if not film:
         return jsonify({'error': 'Film not found'}), 404
         
@@ -235,4 +273,5 @@ def not_found(e):
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))
+    app.debug = True
     app.run(host='0.0.0.0', port=port)
