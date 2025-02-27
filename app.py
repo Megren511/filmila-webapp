@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import logging
 from bson import ObjectId
 from pymongo import MongoClient
+from pymongo.server_api import ServerApi
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -17,21 +18,35 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 app = Flask(__name__, static_folder='frontend/build', static_url_path='')
-CORS(app)
+# Configure CORS
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["http://localhost:3000"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 
 # Configure MongoDB
 try:
-    mongodb_uri = os.getenv("MONGODB_URI")
-    if not mongodb_uri:
-        raise ValueError("MONGODB_URI environment variable is not set")
+    # MongoDB Atlas connection string
+    uri = "mongodb+srv://megrenfilms:2sL22BvuWR9Bkqan@cluster0.jlezl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
     
-    # Connect using pymongo directly
-    client = MongoClient(mongodb_uri)
-    db = client.filmila  # Use 'filmila' as the database name
+    # Create a new client and connect to the server with stable API version
+    client = MongoClient(uri, server_api=ServerApi('1'))
     
-    # Test the connection
+    # Send a ping to confirm a successful connection
     client.admin.command('ping')
-    logger.info("Successfully connected to MongoDB!")
+    logger.info("Pinged your deployment. You successfully connected to MongoDB!")
+    
+    # Get the filmila database
+    db = client.filmila
+    
+    # Create indexes for the users collection if they don't exist
+    if 'users' not in db.list_collection_names():
+        db.users.create_index([('email', 1)], unique=True)
+        logger.info("Created unique index on email field in users collection")
+
 except Exception as e:
     logger.error(f"Failed to connect to MongoDB: {str(e)}")
     raise
@@ -63,7 +78,11 @@ def register():
         data = request.get_json()
         logger.info(f"Registration attempt with data: {data}")
         
-        if not data or not data.get('email') or not data.get('password'):
+        if not data:
+            logger.error("No JSON data received")
+            return jsonify({'message': 'No data provided'}), 400
+            
+        if not data.get('email') or not data.get('password'):
             logger.error("Missing email or password in request data")
             return jsonify({'message': 'Missing email or password'}), 400
             
@@ -81,9 +100,10 @@ def register():
             logger.info("Password hashed successfully")
         except Exception as e:
             logger.error(f"Password hashing error: {str(e)}")
-            raise
+            return jsonify({'message': 'Error processing password'}), 500
         
         user_data = {
+            'name': data.get('name', ''),
             'email': data['email'],
             'password': hashed_password,
             'is_filmmaker': data.get('is_filmmaker', False),
@@ -93,29 +113,28 @@ def register():
         logger.info(f"Attempting to insert user: {data['email']}")
         try:
             result = db.users.insert_one(user_data)
-            user_data['_id'] = str(result.inserted_id)
-            logger.info(f"User inserted successfully with ID: {result.inserted_id}")
+            user_id = str(result.inserted_id)
+            logger.info(f"User inserted successfully with ID: {user_id}")
+            
+            # Create access token
+            access_token = create_access_token(identity=user_id)
+            logger.info("Access token created successfully")
+            
+            return jsonify({
+                'message': 'Registration successful',
+                'token': access_token,
+                'user': {
+                    'id': user_id,
+                    'name': user_data['name'],
+                    'email': user_data['email'],
+                    'is_filmmaker': user_data['is_filmmaker']
+                }
+            }), 201
+            
         except Exception as e:
             logger.error(f"Database insertion error: {str(e)}")
-            raise
-        
-        # Create access token
-        try:
-            access_token = create_access_token(identity=str(result.inserted_id))
-            logger.info("Access token created successfully")
-        except Exception as e:
-            logger.error(f"Token creation error: {str(e)}")
-            raise
-        
-        return jsonify({
-            'message': 'Registration successful',
-            'token': access_token,
-            'user': {
-                'id': str(result.inserted_id),
-                'email': user_data['email'],
-                'is_filmmaker': user_data['is_filmmaker']
-            }
-        }), 201
+            return jsonify({'message': 'Error creating user account'}), 500
+            
     except Exception as e:
         logger.error(f"Registration error: {str(e)}")
         logger.exception("Full traceback:")
