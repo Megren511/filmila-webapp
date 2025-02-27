@@ -15,11 +15,15 @@ from pymongo.server_api import ServerApi
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Clear any existing environment variables
+if 'MONGODB_URI' in os.environ:
+    del os.environ['MONGODB_URI']
+
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 # Check required environment variables
-required_env_vars = ['MONGODB_URI', 'JWT_SECRET_KEY', 'STRIPE_SECRET_KEY']
+required_env_vars = ['MONGODB_URI', 'JWT_SECRET_KEY']
 missing_vars = [var for var in required_env_vars if not os.getenv(var)]
 if missing_vars:
     raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
@@ -28,7 +32,10 @@ app = Flask(__name__, static_folder='frontend/build', static_url_path='')
 # Configure CORS
 CORS(app, resources={
     r"/api/*": {
-        "origins": [os.getenv('FRONTEND_URL', 'http://localhost:3000')],
+        "origins": [
+            os.getenv('FRONTEND_URL', 'https://www.filmila.com'),
+            'http://localhost:3000'  # Allow local development
+        ],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]
     }
@@ -38,16 +45,18 @@ CORS(app, resources={
 try:
     # Get MongoDB connection string from environment variable
     mongodb_uri = os.getenv('MONGODB_URI')
+    logger.info("Connecting to MongoDB...")
     
     # Create a new client and connect to the server with stable API version
     client = MongoClient(mongodb_uri, server_api=ServerApi('1'))
     
     # Send a ping to confirm a successful connection
     client.admin.command('ping')
-    logger.info("Pinged your deployment. You successfully connected to MongoDB!")
+    logger.info("Successfully connected to MongoDB!")
     
     # Get the filmila database
     db = client.filmila
+    logger.info(f"Connected to database: {db.name}")
     
     # Create indexes for the users collection if they don't exist
     if 'users' not in db.list_collection_names():
