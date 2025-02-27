@@ -15,13 +15,20 @@ from pymongo.server_api import ServerApi
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Load environment variables
 load_dotenv()
+
+# Check required environment variables
+required_env_vars = ['MONGODB_URI', 'JWT_SECRET_KEY', 'STRIPE_SECRET_KEY']
+missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+if missing_vars:
+    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
 app = Flask(__name__, static_folder='frontend/build', static_url_path='')
 # Configure CORS
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["http://localhost:3000"],
+        "origins": [os.getenv('FRONTEND_URL', 'http://localhost:3000')],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]
     }
@@ -29,11 +36,11 @@ CORS(app, resources={
 
 # Configure MongoDB
 try:
-    # MongoDB Atlas connection string
-    uri = "mongodb+srv://megrenfilms:2sL22BvuWR9Bkqan@cluster0.jlezl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+    # Get MongoDB connection string from environment variable
+    mongodb_uri = os.getenv('MONGODB_URI')
     
     # Create a new client and connect to the server with stable API version
-    client = MongoClient(uri, server_api=ServerApi('1'))
+    client = MongoClient(mongodb_uri, server_api=ServerApi('1'))
     
     # Send a ping to confirm a successful connection
     client.admin.command('ping')
@@ -52,12 +59,12 @@ except Exception as e:
     raise
 
 # Configure JWT
-app.config["JWT_SECRET_KEY"] = os.getenv("SECRET_KEY", "default-secret-key")
+app.config["JWT_SECRET_KEY"] = os.getenv('JWT_SECRET_KEY')
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=1)
 jwt = JWTManager(app)
 
 # Configure Stripe
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
+stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
 # Configure bcrypt
 bcrypt = Bcrypt(app)
