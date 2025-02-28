@@ -30,10 +30,7 @@ app = Flask(__name__, static_folder='frontend/build', static_url_path='')
 # Configure CORS
 CORS(app, resources={
     r"/api/*": {
-        "origins": [
-            os.getenv('FRONTEND_URL', 'https://www.filmila.com'),
-            'http://localhost:3000'  # Allow local development
-        ],
+        "origins": "*",  # Allow all origins during development
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]
     }
@@ -42,28 +39,21 @@ CORS(app, resources={
 # Configure MongoDB
 try:
     # Get MongoDB connection string from environment variable
-    mongodb_uri = os.getenv('MONGODB_URI')
+    mongodb_uri = os.getenv('MONGODB_URI', "mongodb+srv://megrenfilms:qwer050qwer@cluster0.jlezl.mongodb.net/filmila?retryWrites=true&w=majority&appName=Cluster0")
+    
     logger.info("Connecting to MongoDB...")
-    
-    # Create a new client and connect to the server with stable API version
-    client = MongoClient(mongodb_uri, server_api=ServerApi('1'))
-    
+    # Create a new client and connect to the server
+    client = MongoClient(mongodb_uri)
     # Send a ping to confirm a successful connection
     client.admin.command('ping')
     logger.info("Successfully connected to MongoDB!")
-    
     # Get the filmila database
     db = client.filmila
     logger.info(f"Connected to database: {db.name}")
-    
-    # Create indexes for the users collection if they don't exist
-    if 'users' not in db.list_collection_names():
-        db.users.create_index([('email', 1)], unique=True)
-        logger.info("Created unique index on email field in users collection")
-
 except Exception as e:
     logger.error(f"Failed to connect to MongoDB: {str(e)}")
-    raise
+    client = None
+    db = None
 
 # Configure JWT
 app.config["JWT_SECRET_KEY"] = os.getenv('JWT_SECRET_KEY')

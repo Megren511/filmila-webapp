@@ -1,0 +1,58 @@
+alerts:
+- rule: DEPLOYMENT_FAILED
+- rule: DOMAIN_FAILED
+envs:
+- key: FLASK_APP
+  scope: RUN_AND_BUILD_TIME
+  value: app.py
+- key: FLASK_ENV
+  scope: RUN_AND_BUILD_TIME
+  value: production
+- key: MONGODB_URI
+  scope: RUN_AND_BUILD_TIME
+  value: "mongodb+srv://megrenfilms:qwer050qwer@cluster0.jlezl.mongodb.net/filmila?retryWrites=true&w=majority&appName=Cluster0"
+- key: SECRET_KEY
+  scope: RUN_AND_BUILD_TIME
+  type: SECRET
+  value: ${SECRET_KEY}
+- key: JWT_SECRET_KEY
+  scope: RUN_AND_BUILD_TIME
+  type: SECRET
+  value: ${JWT_SECRET_KEY}
+- key: ALLOWED_ORIGINS
+  scope: RUN_AND_BUILD_TIME
+  value: '*'
+- key: STATIC_FOLDER
+  scope: RUN_AND_BUILD_TIME
+  value: frontend/build
+features:
+- buildpack-stack=ubuntu-22
+ingress:
+  rules:
+  - component:
+      name: filmila-webapp
+    match:
+      path:
+        prefix: /
+name: filmila-webapp
+region: nyc
+services:
+- build_command: |
+    python -m pip install --upgrade pip && 
+    pip install -r requirements.txt && 
+    cd frontend && 
+    npm install && 
+    npm run build && 
+    cd ..
+  environment_slug: python
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: Megren511/filmila-webapp
+  http_port: 8080
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  name: filmila-webapp
+  routes:
+  - path: /
+  run_command: gunicorn --config gunicorn_config.py wsgi:app
