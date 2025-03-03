@@ -80,49 +80,66 @@ logger.info(f"Upload folder: {app.config.get('UPLOAD_FOLDER', 'uploads')}")
 def register():
     try:
         data = request.get_json()
-        logger.info(f"Registration attempt with data: {data}")
+        logger.info("Registration attempt received")
         
+        # Validate request data
         if not data:
-            logger.error("No JSON data received")
+            logger.error("No JSON data received in registration request")
             return jsonify({'message': 'No data provided'}), 400
             
-        if not data.get('email') or not data.get('password'):
-            logger.error("Missing email or password in request data")
-            return jsonify({'message': 'Missing email or password'}), 400
+        # Validate required fields
+        required_fields = ['email', 'password']
+        missing_fields = [field for field in required_fields if not data.get(field)]
+        if missing_fields:
+            logger.error(f"Missing required fields in registration request: {missing_fields}")
+            return jsonify({'message': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+            
+        # Validate email format
+        email = data['email']
+        if not '@' in email or not '.' in email:
+            logger.error(f"Invalid email format: {email}")
+            return jsonify({'message': 'Invalid email format'}), 400
             
         # Check if email exists
-        existing_user = db.users.find_one({'email': data['email']})
-        logger.info(f"Existing user check result: {existing_user}")
-        
-        if existing_user:
-            logger.error(f"Email already registered: {data['email']}")
-            return jsonify({'message': 'Email already registered'}), 400
+        try:
+            existing_user = db.users.find_one({'email': email})
+            if existing_user:
+                logger.warning(f"Attempted registration with existing email: {email}")
+                return jsonify({'message': 'Email already registered'}), 400
+        except Exception as e:
+            logger.error(f"Database error while checking existing user: {str(e)}")
+            return jsonify({'message': 'Error checking user existence'}), 500
             
         # Hash password
         try:
             hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
-            logger.info("Password hashed successfully")
+            logger.debug("Password hashed successfully")
         except Exception as e:
             logger.error(f"Password hashing error: {str(e)}")
             return jsonify({'message': 'Error processing password'}), 500
         
+        # Prepare user data
         user_data = {
             'name': data.get('name', ''),
-            'email': data['email'],
+            'email': email,
             'password': hashed_password,
             'is_filmmaker': data.get('is_filmmaker', False),
             'created_at': datetime.utcnow()
         }
         
-        logger.info(f"Attempting to insert user: {data['email']}")
+        # Insert user into database
         try:
             result = db.users.insert_one(user_data)
             user_id = str(result.inserted_id)
-            logger.info(f"User inserted successfully with ID: {user_id}")
+            logger.info(f"User created successfully with ID: {user_id}")
             
             # Create access token
-            access_token = create_access_token(identity=user_id)
-            logger.info("Access token created successfully")
+            try:
+                access_token = create_access_token(identity=user_id)
+                logger.debug("Access token created successfully")
+            except Exception as e:
+                logger.error(f"Error creating access token: {str(e)}")
+                return jsonify({'message': 'Error creating access token'}), 500
             
             return jsonify({
                 'message': 'Registration successful',
@@ -136,13 +153,13 @@ def register():
             }), 201
             
         except Exception as e:
-            logger.error(f"Database insertion error: {str(e)}")
+            logger.error(f"Database error while creating user: {str(e)}")
             return jsonify({'message': 'Error creating user account'}), 500
             
     except Exception as e:
-        logger.error(f"Registration error: {str(e)}")
+        logger.error(f"Unexpected error during registration: {str(e)}")
         logger.exception("Full traceback:")
-        return jsonify({'message': 'An error occurred during registration'}), 500
+        return jsonify({'message': 'An unexpected error occurred during registration'}), 500
 
 @app.route('/api/login', methods=['POST'])
 def login():
