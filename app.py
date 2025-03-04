@@ -37,23 +37,47 @@ CORS(app, resources={
 })
 
 # Configure MongoDB
-try:
-    # Get MongoDB connection string from environment variable
-    mongodb_uri = os.getenv('MONGODB_URI', "mongodb+srv://megrenfilms:qwer050qwer@cluster0.jlezl.mongodb.net/filmila?retryWrites=true&w=majority&appName=Cluster0")
-    
-    logger.info("Connecting to MongoDB...")
-    # Create a new client and connect to the server
-    client = MongoClient(mongodb_uri)
-    # Send a ping to confirm a successful connection
-    client.admin.command('ping')
-    logger.info("Successfully connected to MongoDB!")
-    # Get the filmila database
-    db = client.filmila
-    logger.info(f"Connected to database: {db.name}")
-except Exception as e:
-    logger.error(f"Failed to connect to MongoDB: {str(e)}")
-    client = None
-    db = None
+def init_mongodb():
+    try:
+        # Get MongoDB connection string from environment variable
+        mongodb_uri = os.getenv('MONGODB_URI', "mongodb+srv://megrenfilms:qwer050qwer@cluster0.jlezl.mongodb.net/filmila?retryWrites=true&w=majority&appName=Cluster0")
+        logger.info("Attempting to connect to MongoDB...")
+        
+        # Create a new client and connect to the server
+        client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
+        
+        # Send a ping to confirm a successful connection
+        client.admin.command('ping')
+        logger.info("Successfully connected to MongoDB!")
+        
+        # Get the filmila database
+        db = client.filmila
+        
+        # Ensure indexes exist
+        try:
+            db.users.create_index([("email", 1)], unique=True)
+            logger.info("Email index created successfully")
+        except Exception as e:
+            logger.warning(f"Index creation warning (can be ignored if index already exists): {str(e)}")
+        
+        # Verify collection exists
+        if "users" not in db.list_collection_names():
+            db.create_collection("users")
+            logger.info("Users collection created")
+        
+        logger.info(f"Connected to database: {db.name}")
+        return client, db
+    except Exception as e:
+        logger.error(f"Failed to connect to MongoDB: {str(e)}")
+        logger.exception("Full MongoDB connection error:")
+        return None, None
+
+# Initialize MongoDB connection
+client, db = init_mongodb()
+
+# Ensure we have a valid database connection
+if not client or not db:
+    logger.error("Failed to initialize MongoDB. Application may not function correctly.")
 
 # Configure JWT
 app.config["JWT_SECRET_KEY"] = os.getenv('JWT_SECRET_KEY')
@@ -78,6 +102,11 @@ logger.info(f"Upload folder: {app.config.get('UPLOAD_FOLDER', 'uploads')}")
 # Authentication routes
 @app.route('/api/register', methods=['POST'])
 def register():
+    # Verify database connection
+    if not client or not db:
+        logger.error("No database connection available")
+        return jsonify({'message': 'Database connection error. Please try again later.'}), 503
+
     try:
         data = request.get_json()
         logger.info("Registration attempt received")
@@ -102,13 +131,22 @@ def register():
             
         # Check if email exists
         try:
+            # Try to reconnect if connection was lost
+            if not client.is_primary:
+                logger.warning("MongoDB connection lost, attempting to reconnect...")
+                global client, db
+                client, db = init_mongodb()
+                if not client or not db:
+                    return jsonify({'message': 'Database connection error. Please try again later.'}), 503
+
             existing_user = db.users.find_one({'email': email})
             if existing_user:
                 logger.warning(f"Attempted registration with existing email: {email}")
                 return jsonify({'message': 'Email already registered'}), 400
         except Exception as e:
             logger.error(f"Database error while checking existing user: {str(e)}")
-            return jsonify({'message': 'Error checking user existence'}), 500
+            logger.exception("Full traceback for user existence check:")
+            return jsonify({'message': 'Database error. Please try again later.'}), 500
             
         # Hash password
         try:
@@ -154,7 +192,8 @@ def register():
             
         except Exception as e:
             logger.error(f"Database error while creating user: {str(e)}")
-            return jsonify({'message': 'Error creating user account'}), 500
+            logger.exception("Full traceback for user creation:")
+            return jsonify({'message': 'Database error. Please try again later.'}), 500
             
     except Exception as e:
         logger.error(f"Unexpected error during registration: {str(e)}")
