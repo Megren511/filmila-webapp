@@ -8,3 +8,4 @@ stripe==8.4.0
 waitress==2.1.2
 redis==5.0.1
 Werkzeug==3.0.1
+gunicorn==21.2.0

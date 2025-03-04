@@ -62,4 +62,4 @@ services:
   name: filmila-webapp
   routes:
   - path: /
-  run_command: python wsgi.py
+  run_command: gunicorn app:app --bind 0.0.0.0:8080 --workers 4
