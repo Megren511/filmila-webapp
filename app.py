@@ -76,22 +76,44 @@ def init_mongodb():
         logger.error("MONGODB_URI environment variable is not set!")
         raise ValueError("MONGODB_URI environment variable is not set")
 
-    # Log connection attempt (safely)
-    logger.info("Attempting to connect to MongoDB...")
+    # Debug: Print raw URI (only in development)
+    if os.getenv('FLASK_ENV') == 'development':
+        logger.debug(f"Raw MongoDB URI: {mongodb_uri}")
+
+    # Safely process the URI
+    try:
+        parts = mongodb_uri.split('//')
+        if len(parts) > 1:
+            credentials = parts[1].split('@')[0]
+            safe_uri = mongodb_uri.replace(f'//{credentials}@', '//<credentials>@')
+        else:
+            safe_uri = '<malformed-uri>'  # Don't expose the original URI if malformed
+        logger.info(f"Attempting to connect to MongoDB at: {safe_uri}")
+    except Exception as e:
+        logger.warning(f"Error processing MongoDB URI for logging: {str(e)}")
+        safe_uri = '<malformed-uri>'
     
     max_retries = 3
     retry_delay = 5  # seconds
 
     for attempt in range(max_retries):
         try:
-            # Create MongoDB client
-            client = MongoClient(mongodb_uri)
+            # Create MongoDB client with timeouts
+            client = MongoClient(
+                mongodb_uri,
+                serverSelectionTimeoutMS=5000,
+                connectTimeoutMS=5000,
+                socketTimeoutMS=5000
+            )
             
             # Test the connection
             client.admin.command('ping')
             
             # Get database
             db = client.get_database("filmila")
+            
+            # Create indexes if they don't exist
+            db.users.create_index([("email", 1)], unique=True)
             
             logger.info("Successfully connected to MongoDB")
             return client, db
