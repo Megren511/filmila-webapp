@@ -81,6 +81,7 @@ def init_mongodb():
     
     max_retries = 3
     retry_delay = 5  # seconds
+    last_error = None
 
     for attempt in range(max_retries):
         try:
@@ -95,22 +96,21 @@ def init_mongodb():
             # Test the connection
             client.admin.command('ping')
             
-            # Get database
+            # Get database and create indexes
             db = client.get_database("filmila")
-            
-            # Create indexes if they don't exist
             db.users.create_index([("email", 1)], unique=True)
             
             logger.info("Successfully connected to MongoDB")
             return client, db
 
         except Exception as e:
+            last_error = str(e)
             if attempt < max_retries - 1:
-                logger.warning(f"MongoDB connection attempt {attempt + 1} failed: {str(e)}")
+                logger.warning(f"MongoDB connection attempt {attempt + 1} failed: {last_error}")
                 logger.info(f"Retrying in {retry_delay} seconds...")
                 sleep(retry_delay)
             else:
-                logger.error(f"Failed to connect to MongoDB after {max_retries} attempts: {str(e)}")
+                logger.error(f"Failed to connect to MongoDB after {max_retries} attempts. Last error: {last_error}")
                 raise
 
 # Initialize MongoDB connection
