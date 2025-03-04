@@ -78,20 +78,10 @@ def init_mongodb():
 
     # Debug: Print raw URI (only in development)
     if os.getenv('FLASK_ENV') == 'development':
-        logger.debug(f"Raw MongoDB URI: {mongodb_uri}")
+        logger.debug("MongoDB URI is set (not showing for security)")
 
-    # Safely process the URI
-    try:
-        parts = mongodb_uri.split('//')
-        if len(parts) > 1:
-            credentials = parts[1].split('@')[0]
-            safe_uri = mongodb_uri.replace(f'//{credentials}@', '//<credentials>@')
-        else:
-            safe_uri = '<malformed-uri>'  # Don't expose the original URI if malformed
-        logger.info(f"Attempting to connect to MongoDB at: {safe_uri}")
-    except Exception as e:
-        logger.warning(f"Error processing MongoDB URI for logging: {str(e)}")
-        safe_uri = '<malformed-uri>'
+    # Log connection attempt without exposing credentials
+    logger.info("Attempting to connect to MongoDB...")
     
     max_retries = 3
     retry_delay = 5  # seconds
