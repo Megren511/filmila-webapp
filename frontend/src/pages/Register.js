@@ -57,8 +57,9 @@ function Register() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
+          'Accept': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify({
           name: formData.name,
           email: formData.email,
@@ -67,19 +68,28 @@ function Register() {
         }),
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        // Store user data and token
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        navigate('/');
+      let data;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        data = await response.json();
       } else {
-        setError(data.message || 'Registration failed. Please try again.');
+        // If response is not JSON, get the text and log it
+        const text = await response.text();
+        console.error('Received non-JSON response:', text);
+        throw new Error('Server returned non-JSON response');
       }
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Registration failed');
+      }
+
+      // Store user data and token
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      navigate('/');
     } catch (err) {
       console.error('Registration error:', err);
-      setError('Network error. Please check your connection and try again.');
+      setError(err.message || 'Network error. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }

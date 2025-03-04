@@ -2,40 +2,42 @@ from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from flask_cors import CORS
 from flask_bcrypt import Bcrypt
-import os
-import stripe
 from datetime import datetime, timedelta
-from dotenv import load_dotenv
+import os
 import logging
-from bson import ObjectId
 from pymongo import MongoClient
-from pymongo.server_api import ServerApi
+from bson import ObjectId
+import stripe
 import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables from .env file if it exists
-if os.path.exists('.env'):
-    load_dotenv()
-
 # Check required environment variables
-required_env_vars = ['MONGODB_URI', 'JWT_SECRET_KEY']
-missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+required_vars = ['MONGODB_URI', 'JWT_SECRET_KEY']
+missing_vars = [var for var in required_vars if not os.getenv(var)]
 if missing_vars:
     raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
-app = Flask(__name__, static_folder='frontend/build', static_url_path='')
-
-# Configure CORS
+# Configure Flask app
+app = Flask(__name__)
 CORS(app, resources={
     r"/api/*": {
-        "origins": "*",  # Allow all origins during development
+        "origins": ["http://localhost:3000", "http://localhost:8080"],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
     }
 })
+
+# Configure JWT
+app.config["JWT_SECRET_KEY"] = os.getenv('JWT_SECRET_KEY')
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=1)
+jwt = JWTManager(app)
+
+# Configure bcrypt
+bcrypt = Bcrypt(app)
 
 # Configure MongoDB
 client = None
@@ -53,7 +55,7 @@ def test_mongodb_connection():
         logger.info(f"✓ Available databases: {db_names}")
         
         # Test filmila database
-        filmila_db = client.filmila
+        filmila_db = client.get_database()
         logger.info(f"✓ Connected to database: {filmila_db.name}")
         
         # Test collections
@@ -76,26 +78,35 @@ def init_mongodb():
     max_retries = 3
     retry_delay = 2  # seconds
     
+    # Get MongoDB connection string from environment variable or use default for development
+    mongodb_uri = os.getenv('MONGODB_URI', "mongodb+srv://megrenfilms:Wuj9BvI1XxYy3aRz@cluster0.jlezl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+    
+    logger.info("Attempting to connect to MongoDB...")
+    
     for attempt in range(max_retries):
         try:
-            # Get MongoDB connection string from environment variable
-            mongodb_uri = os.getenv('MONGODB_URI', "mongodb+srv://megrenfilms:qwer050qwer@cluster0.jlezl.mongodb.net/filmila?retryWrites=true&w=majority&appName=Cluster0")
-            logger.info(f"Attempting to connect to MongoDB (attempt {attempt + 1}/{max_retries})...")
-            
-            # Create a new client with timeouts
+            # Create a new client with timeouts and explicit database name
             client = MongoClient(
                 mongodb_uri,
-                serverSelectionTimeoutMS=5000,
-                connectTimeoutMS=5000,
-                socketTimeoutMS=5000
+                serverSelectionTimeoutMS=30000,
+                connectTimeoutMS=30000,
+                socketTimeoutMS=30000,
+                retryWrites=True,
+                w='majority'
             )
             
             # Test connection
             client.admin.command('ping')
-            logger.info("Successfully connected to MongoDB!")
+            logger.info(f"Successfully connected to MongoDB (attempt {attempt + 1})!")
             
-            # Get the filmila database
-            db = client.filmila
+            try:
+                # First try to get the database from the connection string
+                db = client.get_database()
+                logger.info(f"Using database from connection string: {db.name}")
+            except Exception as e:
+                # If no database specified in connection string, use explicit name
+                db = client['filmila']
+                logger.info(f"Using explicit database name: {db.name}")
             
             # Ensure indexes exist
             try:
@@ -104,20 +115,35 @@ def init_mongodb():
             except Exception as e:
                 logger.warning(f"Index creation warning (can be ignored if index already exists): {str(e)}")
             
-            # Ensure collections exist
+            # Ensure required collections exist
             required_collections = ['users', 'films']
+            existing_collections = db.list_collection_names()
+            
             for collection in required_collections:
-                if collection not in db.list_collection_names():
+                if collection not in existing_collections:
                     db.create_collection(collection)
                     logger.info(f"Created collection: {collection}")
+                else:
+                    logger.info(f"Collection exists: {collection}")
             
-            # Test the connection
-            success, message = test_mongodb_connection()
-            if success:
-                logger.info("MongoDB initialization complete!")
+            # Test database operations
+            try:
+                # Test write operation
+                test_doc = {'_id': 'test', 'timestamp': datetime.utcnow()}
+                db.test_collection.replace_one({'_id': 'test'}, test_doc, upsert=True)
+                
+                # Test read operation
+                read_doc = db.test_collection.find_one({'_id': 'test'})
+                if read_doc:
+                    logger.info("Database read/write test successful")
+                    
+                # Clean up test document
+                db.test_collection.delete_one({'_id': 'test'})
+                
                 return client, db
-            else:
-                raise Exception(f"MongoDB test failed: {message}")
+            except Exception as e:
+                logger.error(f"Database operation test failed: {str(e)}")
+                raise
             
         except Exception as e:
             logger.error(f"MongoDB connection attempt {attempt + 1} failed: {str(e)}")
@@ -133,21 +159,17 @@ logger.info("Starting MongoDB initialization...")
 client, db = init_mongodb()
 
 # Ensure we have a valid database connection
-if not client or not db:
+if client is None or db is None:
     logger.error("Failed to initialize MongoDB. Application may not function correctly.")
+    raise RuntimeError("Failed to establish MongoDB connection")
 else:
-    logger.info("MongoDB initialization successful!")
-
-# Configure JWT
-app.config["JWT_SECRET_KEY"] = os.getenv('JWT_SECRET_KEY')
-app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=1)
-jwt = JWTManager(app)
+    logger.info(f"MongoDB initialization successful! Connected to database: {db.name}")
 
 # Configure Stripe
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
-# Configure bcrypt
-bcrypt = Bcrypt(app)
+# Configure upload folder
+app.config['UPLOAD_FOLDER'] = 'uploads'
 
 # Ensure upload folder exists
 if not os.path.exists(app.config.get('UPLOAD_FOLDER', 'uploads')):
@@ -159,106 +181,72 @@ logger.info("MongoDB connected successfully")
 logger.info(f"Upload folder: {app.config.get('UPLOAD_FOLDER', 'uploads')}")
 
 # Authentication routes
-@app.route('/api/register', methods=['POST'])
+@app.route('/api/register', methods=['POST', 'OPTIONS'])
 def register():
-    global client, db
-    
-    # Verify database connection
-    if not client or not db:
-        logger.error("No database connection available")
-        return jsonify({'message': 'Database connection error. Please try again later.'}), 503
-
-    try:
-        data = request.get_json()
-        logger.info("Registration attempt received")
+    if request.method == 'OPTIONS':
+        return '', 204
         
-        # Validate request data
+    try:
+        # Check content type
+        if not request.is_json:
+            return jsonify({'message': 'Content-Type must be application/json'}), 400
+
+        data = request.get_json()
         if not data:
-            logger.error("No JSON data received in registration request")
             return jsonify({'message': 'No data provided'}), 400
-            
+
+        # Log request data (excluding password)
+        safe_data = {k: v for k, v in data.items() if k != 'password'}
+        logger.info(f"Registration request received: {safe_data}")
+        
         # Validate required fields
         required_fields = ['email', 'password']
         missing_fields = [field for field in required_fields if not data.get(field)]
         if missing_fields:
-            logger.error(f"Missing required fields in registration request: {missing_fields}")
             return jsonify({'message': f'Missing required fields: {", ".join(missing_fields)}'}), 400
-            
-        # Validate email format
-        email = data['email']
-        if not '@' in email or not '.' in email:
-            logger.error(f"Invalid email format: {email}")
-            return jsonify({'message': 'Invalid email format'}), 400
-            
-        # Check if email exists
-        try:
-            # Try to reconnect if connection was lost
-            if not client or not client.is_primary:
-                logger.warning("MongoDB connection lost, attempting to reconnect...")
-                client, db = init_mongodb()
-                if not client or not db:
-                    return jsonify({'message': 'Database connection error. Please try again later.'}), 503
 
-            existing_user = db.users.find_one({'email': email})
-            if existing_user:
-                logger.warning(f"Attempted registration with existing email: {email}")
-                return jsonify({'message': 'Email already registered'}), 400
-        except Exception as e:
-            logger.error(f"Database error while checking existing user: {str(e)}")
-            logger.exception("Full traceback for user existence check:")
-            return jsonify({'message': 'Database error. Please try again later.'}), 500
-            
-        # Hash password
-        try:
-            hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
-            logger.debug("Password hashed successfully")
-        except Exception as e:
-            logger.error(f"Password hashing error: {str(e)}")
-            return jsonify({'message': 'Error processing password'}), 500
-        
-        # Prepare user data
+        # Validate email format
+        email = data.get('email', '').strip()
+        if not '@' in email or not '.' in email:
+            return jsonify({'message': 'Invalid email format'}), 400
+
+        # Check if user exists
+        existing_user = db.users.find_one({'email': email})
+        if existing_user:
+            return jsonify({'message': 'Email already registered'}), 400
+
+        # Create user document
         user_data = {
-            'name': data.get('name', ''),
+            'name': data.get('name', '').strip(),
             'email': email,
-            'password': hashed_password,
+            'password': bcrypt.generate_password_hash(data['password']).decode('utf-8'),
             'is_filmmaker': data.get('is_filmmaker', False),
             'created_at': datetime.utcnow()
         }
-        
-        # Insert user into database
-        try:
-            result = db.users.insert_one(user_data)
-            user_id = str(result.inserted_id)
-            logger.info(f"User created successfully with ID: {user_id}")
-            
-            # Create access token
-            try:
-                access_token = create_access_token(identity=user_id)
-                logger.debug("Access token created successfully")
-            except Exception as e:
-                logger.error(f"Error creating access token: {str(e)}")
-                return jsonify({'message': 'Error creating access token'}), 500
-            
-            return jsonify({
-                'message': 'Registration successful',
-                'token': access_token,
-                'user': {
-                    'id': user_id,
-                    'name': user_data['name'],
-                    'email': user_data['email'],
-                    'is_filmmaker': user_data['is_filmmaker']
-                }
-            }), 201
-            
-        except Exception as e:
-            logger.error(f"Database error while creating user: {str(e)}")
-            logger.exception("Full traceback for user creation:")
-            return jsonify({'message': 'Database error. Please try again later.'}), 500
-            
+
+        # Insert into database
+        result = db.users.insert_one(user_data)
+        user_id = str(result.inserted_id)
+
+        # Generate token
+        token = create_access_token(identity=user_id)
+
+        # Return success response
+        return jsonify({
+            'message': 'Registration successful',
+            'token': token,
+            'user': {
+                'id': user_id,
+                'name': user_data['name'],
+                'email': user_data['email'],
+                'is_filmmaker': user_data['is_filmmaker']
+            }
+        }), 200
+
     except Exception as e:
-        logger.error(f"Unexpected error during registration: {str(e)}")
+        logger.error(f"Registration error: {str(e)}")
         logger.exception("Full traceback:")
-        return jsonify({'message': 'An unexpected error occurred during registration'}), 500
+        return jsonify({'message': 'Server error during registration'}), 500
 
 @app.route('/api/login', methods=['POST'])
 def login():
