@@ -10,6 +10,7 @@ import logging
 from bson import ObjectId
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -40,48 +41,102 @@ CORS(app, resources={
 client = None
 db = None
 
-def init_mongodb():
-    global client, db
+def test_mongodb_connection():
+    """Test MongoDB connection and database operations"""
     try:
-        # Get MongoDB connection string from environment variable
-        mongodb_uri = os.getenv('MONGODB_URI', "mongodb+srv://megrenfilms:qwer050qwer@cluster0.jlezl.mongodb.net/filmila?retryWrites=true&w=majority&appName=Cluster0")
-        logger.info("Attempting to connect to MongoDB...")
-        
-        # Create a new client and connect to the server
-        client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
-        
-        # Send a ping to confirm a successful connection
+        # Test basic connection
         client.admin.command('ping')
-        logger.info("Successfully connected to MongoDB!")
+        logger.info("✓ MongoDB connection successful")
         
-        # Get the filmila database
-        db = client.filmila
+        # Test database access
+        db_names = client.list_database_names()
+        logger.info(f"✓ Available databases: {db_names}")
         
-        # Ensure indexes exist
-        try:
-            db.users.create_index([("email", 1)], unique=True)
-            logger.info("Email index created successfully")
-        except Exception as e:
-            logger.warning(f"Index creation warning (can be ignored if index already exists): {str(e)}")
+        # Test filmila database
+        filmila_db = client.filmila
+        logger.info(f"✓ Connected to database: {filmila_db.name}")
         
-        # Verify collection exists
-        if "users" not in db.list_collection_names():
-            db.create_collection("users")
-            logger.info("Users collection created")
+        # Test collections
+        collections = filmila_db.list_collection_names()
+        logger.info(f"✓ Available collections: {collections}")
         
-        logger.info(f"Connected to database: {db.name}")
-        return client, db
+        # Test users collection
+        users_count = filmila_db.users.count_documents({})
+        logger.info(f"✓ Users collection contains {users_count} documents")
+        
+        return True, "MongoDB connection and operations successful"
     except Exception as e:
-        logger.error(f"Failed to connect to MongoDB: {str(e)}")
-        logger.exception("Full MongoDB connection error:")
-        return None, None
+        logger.error(f"MongoDB test failed: {str(e)}")
+        logger.exception("Full error traceback:")
+        return False, str(e)
+
+def init_mongodb():
+    """Initialize MongoDB connection with retry logic"""
+    global client, db
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            # Get MongoDB connection string from environment variable
+            mongodb_uri = os.getenv('MONGODB_URI', "mongodb+srv://megrenfilms:qwer050qwer@cluster0.jlezl.mongodb.net/filmila?retryWrites=true&w=majority&appName=Cluster0")
+            logger.info(f"Attempting to connect to MongoDB (attempt {attempt + 1}/{max_retries})...")
+            
+            # Create a new client with timeouts
+            client = MongoClient(
+                mongodb_uri,
+                serverSelectionTimeoutMS=5000,
+                connectTimeoutMS=5000,
+                socketTimeoutMS=5000
+            )
+            
+            # Test connection
+            client.admin.command('ping')
+            logger.info("Successfully connected to MongoDB!")
+            
+            # Get the filmila database
+            db = client.filmila
+            
+            # Ensure indexes exist
+            try:
+                db.users.create_index([("email", 1)], unique=True)
+                logger.info("Email index created/verified")
+            except Exception as e:
+                logger.warning(f"Index creation warning (can be ignored if index already exists): {str(e)}")
+            
+            # Ensure collections exist
+            required_collections = ['users', 'films']
+            for collection in required_collections:
+                if collection not in db.list_collection_names():
+                    db.create_collection(collection)
+                    logger.info(f"Created collection: {collection}")
+            
+            # Test the connection
+            success, message = test_mongodb_connection()
+            if success:
+                logger.info("MongoDB initialization complete!")
+                return client, db
+            else:
+                raise Exception(f"MongoDB test failed: {message}")
+            
+        except Exception as e:
+            logger.error(f"MongoDB connection attempt {attempt + 1} failed: {str(e)}")
+            if attempt < max_retries - 1:
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                logger.error("All MongoDB connection attempts failed")
+                return None, None
 
 # Initialize MongoDB connection
+logger.info("Starting MongoDB initialization...")
 client, db = init_mongodb()
 
 # Ensure we have a valid database connection
 if not client or not db:
     logger.error("Failed to initialize MongoDB. Application may not function correctly.")
+else:
+    logger.info("MongoDB initialization successful!")
 
 # Configure JWT
 app.config["JWT_SECRET_KEY"] = os.getenv('JWT_SECRET_KEY')
