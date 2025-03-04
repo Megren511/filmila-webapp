@@ -76,11 +76,7 @@ def init_mongodb():
         logger.error("MONGODB_URI environment variable is not set!")
         raise ValueError("MONGODB_URI environment variable is not set")
 
-    # Debug: Print raw URI (only in development)
-    if os.getenv('FLASK_ENV') == 'development':
-        logger.debug("MongoDB URI is set (not showing for security)")
-
-    # Log connection attempt without exposing credentials
+    # Log connection attempt (no sensitive data)
     logger.info("Attempting to connect to MongoDB...")
     
     max_retries = 3
