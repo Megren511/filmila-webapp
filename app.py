@@ -37,7 +37,11 @@ CORS(app, resources={
 })
 
 # Configure MongoDB
+client = None
+db = None
+
 def init_mongodb():
+    global client, db
     try:
         # Get MongoDB connection string from environment variable
         mongodb_uri = os.getenv('MONGODB_URI', "mongodb+srv://megrenfilms:qwer050qwer@cluster0.jlezl.mongodb.net/filmila?retryWrites=true&w=majority&appName=Cluster0")
@@ -102,6 +106,8 @@ logger.info(f"Upload folder: {app.config.get('UPLOAD_FOLDER', 'uploads')}")
 # Authentication routes
 @app.route('/api/register', methods=['POST'])
 def register():
+    global client, db
+    
     # Verify database connection
     if not client or not db:
         logger.error("No database connection available")
@@ -132,9 +138,8 @@ def register():
         # Check if email exists
         try:
             # Try to reconnect if connection was lost
-            if not client.is_primary:
+            if not client or not client.is_primary:
                 logger.warning("MongoDB connection lost, attempting to reconnect...")
-                global client, db
                 client, db = init_mongodb()
                 if not client or not db:
                     return jsonify({'message': 'Database connection error. Please try again later.'}), 503
