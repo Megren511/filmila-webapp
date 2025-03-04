@@ -61,36 +61,42 @@ db = None
 
 def init_mongodb():
     """Initialize MongoDB connection"""
-    import os
-    from pymongo import MongoClient
-    import logging
-
-    # Setup logging
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
-
-    # Get MongoDB URI from environment variable
-    mongodb_uri = os.getenv('MONGODB_URI')
-    if not mongodb_uri:
-        logger.error("MONGODB_URI environment variable is not set!")
-        raise ValueError("MONGODB_URI environment variable is not set")
-
-    logger.info("Connecting to MongoDB...")
-    
     try:
-        # Create MongoDB client
-        client = MongoClient(mongodb_uri)
+        # Get MongoDB URI from environment
+        mongodb_uri = os.getenv('MONGODB_URI')
+        if not mongodb_uri:
+            logger.error("MONGODB_URI environment variable is not set!")
+            raise ValueError("MONGODB_URI environment variable is not set")
+
+        logger.info("Attempting to connect to MongoDB...")
+        
+        # Create MongoDB client with retryWrites enabled
+        client = MongoClient(
+            mongodb_uri,
+            retryWrites=True,
+            serverSelectionTimeoutMS=5000  # 5 second timeout
+        )
         
         # Test the connection
         client.admin.command('ping')
         
-        # Get database
-        db = client.get_database("filmila")
+        # Get database name from URI or default to 'filmila'
+        db_name = 'filmila'
+        if '/' in mongodb_uri:
+            parts = mongodb_uri.split('/')
+            if len(parts) > 3:  # mongodb://user:pass@host:port/dbname
+                potential_db = parts[-1].split('?')[0]
+                if potential_db:
+                    db_name = potential_db
+        
+        db = client[db_name]
         
         # Create indexes
         db.users.create_index([("email", 1)], unique=True)
+        db.movies.create_index([("title", 1)])
+        db.movies.create_index([("genres", 1)])
         
-        logger.info("Successfully connected to MongoDB")
+        logger.info(f"Successfully connected to MongoDB database: {db_name}")
         return client, db
 
     except Exception as e:
