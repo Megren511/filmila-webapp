@@ -9,6 +9,7 @@ import {
   Alert,
   FormControlLabel,
   Checkbox,
+  CircularProgress,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import config from '../config';
@@ -16,12 +17,14 @@ import config from '../config';
 function Register() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
+    name: '',
     email: '',
     password: '',
     confirmPassword: '',
     isFilmmaker: false,
   });
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleInputChange = (e) => {
     const { name, value, checked } = e.target;
@@ -34,9 +37,18 @@ function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
+    // Validation
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
+      setLoading(false);
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      setLoading(false);
       return;
     }
 
@@ -45,25 +57,41 @@ function Register() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
         credentials: 'include',
         body: JSON.stringify({
+          name: formData.name,
           email: formData.email,
           password: formData.password,
           is_filmmaker: formData.isFilmmaker,
         }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        localStorage.setItem('token', data.token);
-        navigate('/');
+      let data;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        data = await response.json();
       } else {
-        const data = await response.json();
-        setError(data.message || 'Registration failed');
+        // If response is not JSON, get the text and log it
+        const text = await response.text();
+        console.error('Received non-JSON response:', text);
+        throw new Error('Server returned non-JSON response');
       }
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Registration failed');
+      }
+
+      // Store user data and token
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      navigate('/');
     } catch (err) {
-      setError('An error occurred. Please try again.');
+      console.error('Registration error:', err);
+      setError(err.message || 'Network error. Please check your connection and try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -81,6 +109,16 @@ function Register() {
         )}
 
         <Box component="form" onSubmit={handleSubmit}>
+          <TextField
+            fullWidth
+            label="Name"
+            name="name"
+            value={formData.name}
+            onChange={handleInputChange}
+            margin="normal"
+            required
+          />
+
           <TextField
             fullWidth
             label="Email"
@@ -101,6 +139,7 @@ function Register() {
             onChange={handleInputChange}
             margin="normal"
             required
+            helperText="Password must be at least 6 characters long"
           />
 
           <TextField
@@ -129,25 +168,21 @@ function Register() {
           <Button
             type="submit"
             variant="contained"
-            color="primary"
-            size="large"
             fullWidth
             sx={{ mt: 3 }}
+            disabled={loading}
           >
-            Register
+            {loading ? <CircularProgress size={24} /> : 'Register'}
           </Button>
 
-          <Box sx={{ mt: 2, textAlign: 'center' }}>
-            <Typography variant="body2">
-              Already have an account?{' '}
-              <Button
-                color="primary"
-                onClick={() => navigate('/login')}
-              >
-                Login here
-              </Button>
-            </Typography>
-          </Box>
+          <Button
+            variant="text"
+            fullWidth
+            sx={{ mt: 2 }}
+            onClick={() => navigate('/login')}
+          >
+            Already have an account? Login
+          </Button>
         </Box>
       </Paper>
     </Container>

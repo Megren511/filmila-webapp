@@ -2,157 +2,182 @@ from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from flask_cors import CORS
 from flask_bcrypt import Bcrypt
-import os
-import stripe
 from datetime import datetime, timedelta
-from dotenv import load_dotenv
+import os
 import logging
-from bson import ObjectId
 from pymongo import MongoClient
-from pymongo.server_api import ServerApi
+from bson import ObjectId
+import stripe
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables from .env file if it exists
-if os.path.exists('.env'):
-    load_dotenv()
-
 # Check required environment variables
-required_env_vars = ['MONGODB_URI', 'JWT_SECRET_KEY']
-missing_vars = [var for var in required_env_vars if not os.getenv(var)]
-if missing_vars:
-    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+mongodb_uri = os.getenv('MONGODB_URI')
+jwt_secret = os.getenv('JWT_SECRET_KEY')
 
-app = Flask(__name__, static_folder='frontend/build', static_url_path='')
+if not mongodb_uri:
+    logger.error("MONGODB_URI environment variable is not set!")
+    raise ValueError("MONGODB_URI environment variable is not set")
 
-# Configure CORS
-CORS(app, resources={
-    r"/api/*": {
-        "origins": [
-            os.getenv('FRONTEND_URL', 'https://www.filmila.com'),
-            'http://localhost:3000'  # Allow local development
-        ],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
-    }
-})
+if not jwt_secret:
+    logger.error("JWT_SECRET_KEY environment variable is not set!")
+    raise ValueError("JWT_SECRET_KEY environment variable is not set")
 
-# Configure MongoDB
-try:
-    # Get MongoDB connection string from environment variable
-    mongodb_uri = os.getenv('MONGODB_URI')
-    logger.info("Connecting to MongoDB...")
-    
-    # Create a new client and connect to the server with stable API version
-    client = MongoClient(mongodb_uri, server_api=ServerApi('1'))
-    
-    # Send a ping to confirm a successful connection
-    client.admin.command('ping')
-    logger.info("Successfully connected to MongoDB!")
-    
-    # Get the filmila database
-    db = client.filmila
-    logger.info(f"Connected to database: {db.name}")
-    
-    # Create indexes for the users collection if they don't exist
-    if 'users' not in db.list_collection_names():
-        db.users.create_index([('email', 1)], unique=True)
-        logger.info("Created unique index on email field in users collection")
+# Configure Flask app
+app = Flask(__name__, static_folder='frontend/build', static_url_path='/')
 
-except Exception as e:
-    logger.error(f"Failed to connect to MongoDB: {str(e)}")
-    raise
+# Configure CORS based on environment
+if os.getenv('FLASK_ENV') == 'development':
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": ["http://localhost:3000", "http://localhost:8080"],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True
+        }
+    })
+else:
+    # Production CORS settings
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": [
+                "https://filmila-webapp.onrender.com",
+                "https://filmila-webapp.vercel.app"
+            ],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True
+        }
+    })
 
 # Configure JWT
-app.config["JWT_SECRET_KEY"] = os.getenv('JWT_SECRET_KEY')
+app.config["JWT_SECRET_KEY"] = jwt_secret
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=1)
 jwt = JWTManager(app)
-
-# Configure Stripe
-stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
 # Configure bcrypt
 bcrypt = Bcrypt(app)
 
-# Ensure upload folder exists
-if not os.path.exists(app.config.get('UPLOAD_FOLDER', 'uploads')):
-    os.makedirs(app.config.get('UPLOAD_FOLDER', 'uploads'))
-    logger.info(f"Created upload directory at {app.config.get('UPLOAD_FOLDER', 'uploads')}")
+# Configure MongoDB
+client = None
+db = None
 
-# Log configuration
-logger.info("MongoDB connected successfully")
-logger.info(f"Upload folder: {app.config.get('UPLOAD_FOLDER', 'uploads')}")
+def init_mongodb():
+    """Initialize MongoDB connection"""
+    try:
+        # Create MongoDB client
+        client = MongoClient(mongodb_uri)
+        
+        # Test the connection
+        client.admin.command('ping')
+        
+        # Get database
+        db = client.get_database("filmila")
+        
+        # Create indexes
+        db.users.create_index([("email", 1)], unique=True)
+        
+        logger.info("Successfully connected to MongoDB")
+        return client, db
+
+    except Exception as e:
+        logger.error(f"Failed to connect to MongoDB: {str(e)}")
+        raise
+
+# Initialize MongoDB connection
+client, db = init_mongodb()
+
+# Serve React static files
+@app.route('/')
+def serve():
+    return send_from_directory(app.static_folder, 'index.html')
+
+@app.route('/<path:path>')
+def static_proxy(path):
+    return send_from_directory(app.static_folder, path)
+
+# Error handlers
+@app.errorhandler(404)
+def not_found(e):
+    if request.path.startswith('/api/'):
+        return jsonify({"error": "Not found"}), 404
+    return send_from_directory(app.static_folder, 'index.html')
+
+@app.errorhandler(500)
+def server_error(e):
+    logger.error(f"Server error: {str(e)}")
+    return jsonify({"error": "Internal server error"}), 500
 
 # Authentication routes
-@app.route('/api/register', methods=['POST'])
+@app.route('/api/register', methods=['POST', 'OPTIONS'])
 def register():
+    if request.method == 'OPTIONS':
+        return '', 204
+        
     try:
+        # Check content type
+        if not request.is_json:
+            return jsonify({'message': 'Content-Type must be application/json'}), 400
+
         data = request.get_json()
-        logger.info(f"Registration attempt with data: {data}")
-        
         if not data:
-            logger.error("No JSON data received")
             return jsonify({'message': 'No data provided'}), 400
-            
-        if not data.get('email') or not data.get('password'):
-            logger.error("Missing email or password in request data")
-            return jsonify({'message': 'Missing email or password'}), 400
-            
-        # Check if email exists
-        existing_user = db.users.find_one({'email': data['email']})
-        logger.info(f"Existing user check result: {existing_user}")
+
+        # Log request data (excluding password)
+        safe_data = {k: v for k, v in data.items() if k != 'password'}
+        logger.info(f"Registration request received: {safe_data}")
         
+        # Validate required fields
+        required_fields = ['email', 'password']
+        missing_fields = [field for field in required_fields if not data.get(field)]
+        if missing_fields:
+            return jsonify({'message': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+
+        # Validate email format
+        email = data.get('email', '').strip()
+        if not '@' in email or not '.' in email:
+            return jsonify({'message': 'Invalid email format'}), 400
+
+        # Check if user exists
+        existing_user = db.users.find_one({'email': email})
         if existing_user:
-            logger.error(f"Email already registered: {data['email']}")
             return jsonify({'message': 'Email already registered'}), 400
-            
-        # Hash password
-        try:
-            hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
-            logger.info("Password hashed successfully")
-        except Exception as e:
-            logger.error(f"Password hashing error: {str(e)}")
-            return jsonify({'message': 'Error processing password'}), 500
-        
+
+        # Create user document
         user_data = {
-            'name': data.get('name', ''),
-            'email': data['email'],
-            'password': hashed_password,
+            'name': data.get('name', '').strip(),
+            'email': email,
+            'password': bcrypt.generate_password_hash(data['password']).decode('utf-8'),
             'is_filmmaker': data.get('is_filmmaker', False),
             'created_at': datetime.utcnow()
         }
-        
-        logger.info(f"Attempting to insert user: {data['email']}")
-        try:
-            result = db.users.insert_one(user_data)
-            user_id = str(result.inserted_id)
-            logger.info(f"User inserted successfully with ID: {user_id}")
-            
-            # Create access token
-            access_token = create_access_token(identity=user_id)
-            logger.info("Access token created successfully")
-            
-            return jsonify({
-                'message': 'Registration successful',
-                'token': access_token,
-                'user': {
-                    'id': user_id,
-                    'name': user_data['name'],
-                    'email': user_data['email'],
-                    'is_filmmaker': user_data['is_filmmaker']
-                }
-            }), 201
-            
-        except Exception as e:
-            logger.error(f"Database insertion error: {str(e)}")
-            return jsonify({'message': 'Error creating user account'}), 500
-            
+
+        # Insert into database
+        result = db.users.insert_one(user_data)
+        user_id = str(result.inserted_id)
+
+        # Generate token
+        token = create_access_token(identity=user_id)
+
+        # Return success response
+        return jsonify({
+            'message': 'Registration successful',
+            'token': token,
+            'user': {
+                'id': user_id,
+                'name': user_data['name'],
+                'email': user_data['email'],
+                'is_filmmaker': user_data['is_filmmaker']
+            }
+        }), 200
+
     except Exception as e:
         logger.error(f"Registration error: {str(e)}")
         logger.exception("Full traceback:")
-        return jsonify({'message': 'An error occurred during registration'}), 500
+        return jsonify({'message': 'Server error during registration'}), 500
 
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -286,20 +311,7 @@ def watch_film(film_id):
         
     return send_file(film['file_path'])
 
-# Serve React App
-@app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
-def serve(path):
-    if path != "" and os.path.exists(app.static_folder + '/' + path):
-        return send_from_directory(app.static_folder, path)
-    else:
-        return send_from_directory(app.static_folder, 'index.html')
-
-@app.errorhandler(404)
-def not_found(e):
-    return send_from_directory(app.static_folder, 'index.html')
-
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))
-    app.debug = True
-    app.run(host='0.0.0.0', port=port)
+    debug = os.getenv('FLASK_ENV') == 'development'
+    app.run(host='0.0.0.0', port=port, debug=debug)

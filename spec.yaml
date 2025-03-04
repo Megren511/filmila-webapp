@@ -55,10 +55,6 @@ services:
       - key: FLASK_ENV
         scope: RUN_TIME
         value: production
-      - key: SECRET_KEY
+      - key: MONGODB_URI
         scope: RUN_TIME
-        type: SECRET
-        value: ${SECRET_KEY}
-      - key: DATABASE_URL
-        scope: RUN_TIME
-        value: ${DATABASE_URL}
+        value: "mongodb+srv://megrenfilms:MV52eUzhYOxRHavW@cluster0.jlezl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
