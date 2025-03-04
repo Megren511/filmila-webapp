@@ -15,10 +15,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Check required environment variables
-required_vars = ['MONGODB_URI', 'JWT_SECRET_KEY']
-missing_vars = [var for var in required_vars if not os.getenv(var)]
-if missing_vars:
-    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+mongodb_uri = os.getenv('MONGODB_URI')
+jwt_secret = os.getenv('JWT_SECRET_KEY')
+
+if not mongodb_uri:
+    logger.error("MONGODB_URI environment variable is not set!")
+    raise ValueError("MONGODB_URI environment variable is not set")
+
+if not jwt_secret:
+    logger.error("JWT_SECRET_KEY environment variable is not set!")
+    raise ValueError("JWT_SECRET_KEY environment variable is not set")
 
 # Configure Flask app
 app = Flask(__name__, static_folder='frontend/build', static_url_path='/')
@@ -48,7 +54,7 @@ else:
     })
 
 # Configure JWT
-app.config["JWT_SECRET_KEY"] = os.getenv('JWT_SECRET_KEY')
+app.config["JWT_SECRET_KEY"] = jwt_secret
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=1)
 jwt = JWTManager(app)
 
@@ -60,55 +66,26 @@ client = None
 db = None
 
 def init_mongodb():
-    """Initialize MongoDB connection with retry logic"""
-    import os
-    from pymongo import MongoClient
-    import logging
-    from time import sleep
+    """Initialize MongoDB connection"""
+    try:
+        # Create MongoDB client
+        client = MongoClient(mongodb_uri)
+        
+        # Test the connection
+        client.admin.command('ping')
+        
+        # Get database
+        db = client.get_database("filmila")
+        
+        # Create indexes
+        db.users.create_index([("email", 1)], unique=True)
+        
+        logger.info("Successfully connected to MongoDB")
+        return client, db
 
-    # Setup logging
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
-
-    # Get MongoDB URI from environment variable
-    mongodb_uri = os.getenv('MONGODB_URI')
-    if not mongodb_uri:
-        logger.error("MONGODB_URI environment variable is not set!")
-        raise ValueError("MONGODB_URI environment variable is not set")
-
-    # Log connection attempt (no sensitive data)
-    logger.info("Attempting to connect to MongoDB...")
-    
-    max_retries = 3
-    retry_delay = 5  # seconds
-
-    for attempt in range(max_retries):
-        try:
-            # Create MongoDB client with timeouts
-            client = MongoClient(
-                mongodb_uri,
-                serverSelectionTimeoutMS=5000,
-                connectTimeoutMS=5000,
-                socketTimeoutMS=5000
-            )
-            
-            # Test the connection
-            client.admin.command('ping')
-            
-            # Get database and create indexes
-            db = client.get_database("filmila")
-            db.users.create_index([("email", 1)], unique=True)
-            
-            logger.info("Successfully connected to MongoDB")
-            return client, db
-
-        except Exception as e:
-            if attempt < max_retries - 1:
-                logger.warning(f"MongoDB connection attempt {attempt + 1} failed. Retrying in {retry_delay} seconds...")
-                sleep(retry_delay)
-            else:
-                logger.error(f"Failed to connect to MongoDB after {max_retries} attempts")
-                raise
+    except Exception as e:
+        logger.error(f"Failed to connect to MongoDB: {str(e)}")
+        raise
 
 # Initialize MongoDB connection
 client, db = init_mongodb()
