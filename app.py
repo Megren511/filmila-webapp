@@ -100,7 +100,7 @@ def init_mongodb():
         return client, db
 
     except Exception as e:
-        logger.error(f"Failed to connect to MongoDB: {str(e)}")
+        logger.error("Failed to connect to MongoDB. Please check your connection string and credentials.")
         raise
 
 # Initialize MongoDB connection
