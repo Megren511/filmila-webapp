@@ -13,6 +13,7 @@ import {
 } from '@mui/material';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { styled } from '@mui/material/styles';
+import { register } from '../services/api';
 
 const StyledPaper = styled(Paper)(({ theme }) => ({
   marginTop: theme.spacing(8),
@@ -54,24 +55,12 @@ function SignUpPage() {
     }
 
     try {
-      const response = await fetch('/api/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: formData.name,
-          email: formData.email,
-          password: formData.password,
-          is_filmmaker: formData.isFilmmaker,
-        }),
+      const { data } = await register({
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        is_filmmaker: formData.isFilmmaker,
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'An error occurred');
-      }
 
       // Store the token in localStorage
       localStorage.setItem('token', data.token);
@@ -79,7 +68,7 @@ function SignUpPage() {
       // Redirect to dashboard
       navigate('/dashboard');
     } catch (err) {
-      setError(err.message);
+      setError(err.response?.data?.message || err.message || 'An error occurred');
     }
   };
 
