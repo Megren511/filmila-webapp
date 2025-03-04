@@ -65,14 +65,19 @@ def init_mongodb():
     max_retries = 3
     retry_delay = 2  # seconds
     
+    # Get MongoDB URI from environment variable
     mongodb_uri = os.getenv('MONGODB_URI')
     if not mongodb_uri:
+        logger.error("MONGODB_URI environment variable is not set!")
         raise ValueError("MONGODB_URI environment variable is not set")
-    
-    logger.info("Attempting to connect to MongoDB...")
+        
+    # Log the URI (without credentials) for debugging
+    safe_uri = mongodb_uri.replace('//' + mongodb_uri.split('//')[1].split('@')[0] + '@', '//<credentials>@')
+    logger.info(f"Attempting to connect to MongoDB at: {safe_uri}")
     
     for attempt in range(max_retries):
         try:
+            # Create MongoDB client
             client = MongoClient(
                 mongodb_uri,
                 serverSelectionTimeoutMS=30000,
@@ -82,18 +87,18 @@ def init_mongodb():
                 w='majority'
             )
             
+            # Test connection
             client.admin.command('ping')
             logger.info(f"Successfully connected to MongoDB (attempt {attempt + 1})!")
             
-            try:
-                db = client.get_database()
-                logger.info(f"Using database from connection string: {db.name}")
-            except Exception as e:
-                db = client['filmila']
-                logger.info(f"Using explicit database name: {db.name}")
+            # Get database
+            db_name = mongodb_uri.split('/')[-1].split('?')[0] or 'filmila'
+            db = client[db_name]
+            logger.info(f"Using database: {db_name}")
             
-            # Ensure indexes exist
+            # Ensure indexes
             db.users.create_index([("email", 1)], unique=True)
+            logger.info("Database indexes verified")
             
             return client, db
             
