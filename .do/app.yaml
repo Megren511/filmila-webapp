@@ -53,7 +53,7 @@ services:
     cd ..
   environment_slug: python
   github:
-    branch: main
+    branch: clean-config-2
     deploy_on_push: true
     repo: Megren511/filmila-webapp
   http_port: 8080
