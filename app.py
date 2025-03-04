@@ -61,54 +61,48 @@ db = None
 
 def init_mongodb():
     """Initialize MongoDB connection with retry logic"""
-    global client, db
-    max_retries = 3
-    retry_delay = 2  # seconds
-    
+    import os
+    from pymongo import MongoClient
+    import logging
+    from time import sleep
+
+    # Setup logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
     # Get MongoDB URI from environment variable
     mongodb_uri = os.getenv('MONGODB_URI')
     if not mongodb_uri:
         logger.error("MONGODB_URI environment variable is not set!")
         raise ValueError("MONGODB_URI environment variable is not set")
-        
-    # Log the URI (without credentials) for debugging
-    safe_uri = mongodb_uri.replace('//' + mongodb_uri.split('//')[1].split('@')[0] + '@', '//<credentials>@')
-    logger.info(f"Attempting to connect to MongoDB at: {safe_uri}")
+
+    # Log connection attempt (safely)
+    logger.info("Attempting to connect to MongoDB...")
     
+    max_retries = 3
+    retry_delay = 5  # seconds
+
     for attempt in range(max_retries):
         try:
             # Create MongoDB client
-            client = MongoClient(
-                mongodb_uri,
-                serverSelectionTimeoutMS=30000,
-                connectTimeoutMS=30000,
-                socketTimeoutMS=30000,
-                retryWrites=True,
-                w='majority'
-            )
+            client = MongoClient(mongodb_uri)
             
-            # Test connection
+            # Test the connection
             client.admin.command('ping')
-            logger.info(f"Successfully connected to MongoDB (attempt {attempt + 1})!")
             
             # Get database
-            db_name = mongodb_uri.split('/')[-1].split('?')[0] or 'filmila'
-            db = client[db_name]
-            logger.info(f"Using database: {db_name}")
+            db = client.get_database("filmila")
             
-            # Ensure indexes
-            db.users.create_index([("email", 1)], unique=True)
-            logger.info("Database indexes verified")
-            
+            logger.info("Successfully connected to MongoDB")
             return client, db
-            
+
         except Exception as e:
-            logger.error(f"MongoDB connection attempt {attempt + 1} failed: {str(e)}")
             if attempt < max_retries - 1:
+                logger.warning(f"MongoDB connection attempt {attempt + 1} failed: {str(e)}")
                 logger.info(f"Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
+                sleep(retry_delay)
             else:
-                logger.error("All MongoDB connection attempts failed")
+                logger.error(f"Failed to connect to MongoDB after {max_retries} attempts: {str(e)}")
                 raise
 
 # Initialize MongoDB connection
