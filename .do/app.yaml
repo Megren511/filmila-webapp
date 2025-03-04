@@ -62,4 +62,4 @@ services:
   name: filmila-webapp
   routes:
   - path: /
-  run_command: gunicorn --config gunicorn_config.py wsgi:app
+  run_command: gunicorn wsgi:app --bind 0.0.0.0:8080 --workers 4 --timeout 120
