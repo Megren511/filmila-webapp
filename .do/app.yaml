@@ -10,7 +10,8 @@ envs:
   value: production
 - key: MONGODB_URI
   scope: RUN_AND_BUILD_TIME
-  value: "mongodb+srv://megrenfilms:qwer050qwer@cluster0.jlezl.mongodb.net/filmila?retryWrites=true&w=majority&appName=Cluster0"
+  type: SECRET
+  value: ${MONGODB_URI}
 - key: SECRET_KEY
   scope: RUN_AND_BUILD_TIME
   type: SECRET
@@ -19,12 +20,18 @@ envs:
   scope: RUN_AND_BUILD_TIME
   type: SECRET
   value: ${JWT_SECRET_KEY}
-- key: ALLOWED_ORIGINS
+- key: FRONTEND_URL
   scope: RUN_AND_BUILD_TIME
-  value: '*'
-- key: STATIC_FOLDER
+  value: https://filmila-webapp.ondigitalocean.app
+- key: REACT_APP_API_URL
   scope: RUN_AND_BUILD_TIME
-  value: frontend/build
+  value: https://filmila-webapp.ondigitalocean.app/api
+- key: NODE_ENV
+  scope: RUN_AND_BUILD_TIME
+  value: production
+- key: PORT
+  scope: RUN_AND_BUILD_TIME
+  value: "8080"
 features:
 - buildpack-stack=ubuntu-22
 ingress:
