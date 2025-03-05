@@ -17,11 +17,18 @@ services:
         value: https://filmila-webapp.onrender.com
       - key: API_BASE_URL
         value: https://filmila-webapp.onrender.com/api
-      - key: MONGODB_URI
+      - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET_KEY
+        sync: false
+      - key: SECRET_KEY
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_PUBLISHABLE_KEY
         sync: false
+
+  - type: postgresql
+    name: filmila-db
+    plan: free
+    ipAllowList: []
