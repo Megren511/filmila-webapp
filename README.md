@@ -10,12 +10,14 @@ A platform for independent filmmakers to share their work and monetize their con
 - Beautiful gallery-style homepage
 - Film categorization
 - User authentication for both filmmakers and viewers
+- PostgreSQL database for reliable data storage
 
 ## Project Structure
 
 ```
 filmila-webapp/
 ├── app.py                 # Flask backend
+├── models.py             # SQLAlchemy models
 ├── requirements.txt       # Python dependencies
 ├── uploads/              # Film storage directory
 └── frontend/            # React frontend
@@ -28,7 +30,18 @@ filmila-webapp/
 
 ## Setup Instructions
 
-1. Set up the backend:
+1. Set up PostgreSQL:
+```bash
+# Install PostgreSQL if not already installed
+# Create a new database
+createdb filmila_db
+
+# Or using psql
+psql
+CREATE DATABASE filmila_db;
+```
+
+2. Set up the backend:
 ```bash
 # Create and activate virtual environment
 python -m venv venv
@@ -37,23 +50,20 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Set environment variables
-set FLASK_APP=app.py
-set FLASK_ENV=development
-set STRIPE_SECRET_KEY=your_stripe_secret_key
-set SECRET_KEY=your_secret_key
+# Set environment variables (use generate_env.py)
+python generate_env.py
 ```
 
-2. Set up the frontend:
+3. Set up the frontend:
 ```bash
 cd frontend
 npm install
 ```
 
-3. Run the application:
+4. Run the application:
 ```bash
 # Terminal 1 - Run backend
-flask run
+python wsgi.py
 
 # Terminal 2 - Run frontend
 cd frontend
@@ -62,13 +72,44 @@ npm start
 
 ## Environment Variables
 
-Create a `.env` file in the root directory with the following variables:
+Create a `.env` file in the root directory with the following variables (or use generate_env.py):
 ```
 FLASK_APP=app.py
 FLASK_ENV=development
+NODE_ENV=development
+DATABASE_URL=postgresql://username:password@localhost:5432/filmila_db
+JWT_SECRET_KEY=your_jwt_secret_key
 SECRET_KEY=your_secret_key
 STRIPE_SECRET_KEY=your_stripe_secret_key
+FRONTEND_URL=http://localhost:3000
+PORT=8080
 ```
+
+## Database Models
+
+The application uses SQLAlchemy ORM with the following models:
+
+### User Model
+- id: Primary key
+- username: Unique username
+- email: Unique email address
+- password_hash: Securely hashed password
+- is_filmmaker: Boolean flag for filmmaker status
+
+### Film Model
+- id: Primary key
+- title: Film title
+- description: Film description
+- price: Film price in cents
+- filmmaker_id: Foreign key to User model
+- upload_date: Timestamp of upload
+
+### Purchase Model
+- id: Primary key
+- user_id: Foreign key to User model
+- film_id: Foreign key to Film model
+- purchase_date: Timestamp of purchase
+- payment_id: Stripe payment ID
 
 ## API Endpoints
 

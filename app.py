@@ -5,8 +5,9 @@ from flask_bcrypt import Bcrypt
 from datetime import datetime, timedelta
 import os
 import logging
-from pymongo import MongoClient
-from bson import ObjectId
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
 import stripe
 import time
 
@@ -15,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Check required environment variables
-required_vars = ['MONGODB_URI', 'JWT_SECRET_KEY']
+required_vars = ['DATABASE_URL', 'JWT_SECRET_KEY']
 missing_vars = [var for var in required_vars if not os.getenv(var)]
 if missing_vars:
     raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
@@ -38,8 +39,7 @@ else:
     CORS(app, resources={
         r"/api/*": {
             "origins": [
-                "https://filmila-webapp.onrender.com",
-                "https://filmila-webapp.vercel.app"
+                "https://sea-turtle-app-879b6.ondigitalocean.app"
             ],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"],
@@ -55,50 +55,29 @@ jwt = JWTManager(app)
 # Configure bcrypt
 bcrypt = Bcrypt(app)
 
-# Configure MongoDB
-client = None
-db = None
-
-def init_mongodb():
-    """Initialize MongoDB connection"""
-    import os
-    from pymongo import MongoClient
-    import logging
-
-    # Setup logging
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
-
-    # Get MongoDB URI from environment variable
-    mongodb_uri = os.getenv('MONGODB_URI')
-    if not mongodb_uri:
-        logger.error("MONGODB_URI environment variable is not set!")
-        raise ValueError("MONGODB_URI environment variable is not set")
-
-    logger.info("Connecting to MongoDB...")
-    
+# Configure PostgreSQL
+def init_db():
+    """Initialize PostgreSQL connection"""
     try:
-        # Create MongoDB client
-        client = MongoClient(mongodb_uri)
-        
-        # Test the connection
-        client.admin.command('ping')
-        
-        # Get database
-        db = client.get_database("filmila")
-        
-        # Create indexes
-        db.users.create_index([("email", 1)], unique=True)
-        
-        logger.info("Successfully connected to MongoDB")
-        return client, db
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            raise ValueError("DATABASE_URL environment variable is not set")
 
+        engine = create_engine(database_url)
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        Base = declarative_base()
+        
+        # Create all tables
+        Base.metadata.create_all(bind=engine)
+        
+        logger.info("Successfully connected to PostgreSQL")
+        return SessionLocal, Base
     except Exception as e:
-        logger.error(f"Failed to connect to MongoDB: {str(e)}")
+        logger.error(f"Failed to connect to PostgreSQL: {str(e)}")
         raise
 
-# Initialize MongoDB connection
-client, db = init_mongodb()
+# Initialize database connection
+db_session, Base = init_db()
 
 # Serve React static files
 @app.route('/')
@@ -152,22 +131,23 @@ def register():
             return jsonify({'message': 'Invalid email format'}), 400
 
         # Check if user exists
-        existing_user = db.users.find_one({'email': email})
+        existing_user = db_session.query(User).filter_by(email=email).first()
         if existing_user:
             return jsonify({'message': 'Email already registered'}), 400
 
         # Create user document
-        user_data = {
-            'name': data.get('name', '').strip(),
-            'email': email,
-            'password': bcrypt.generate_password_hash(data['password']).decode('utf-8'),
-            'is_filmmaker': data.get('is_filmmaker', False),
-            'created_at': datetime.utcnow()
-        }
+        user_data = User(
+            name=data.get('name', '').strip(),
+            email=email,
+            password=bcrypt.generate_password_hash(data['password']).decode('utf-8'),
+            is_filmmaker=data.get('is_filmmaker', False),
+            created_at=datetime.utcnow()
+        )
 
         # Insert into database
-        result = db.users.insert_one(user_data)
-        user_id = str(result.inserted_id)
+        db_session.add(user_data)
+        db_session.commit()
+        user_id = user_data.id
 
         # Generate token
         token = create_access_token(identity=user_id)
@@ -178,9 +158,9 @@ def register():
             'token': token,
             'user': {
                 'id': user_id,
-                'name': user_data['name'],
-                'email': user_data['email'],
-                'is_filmmaker': user_data['is_filmmaker']
+                'name': user_data.name,
+                'email': user_data.email,
+                'is_filmmaker': user_data.is_filmmaker
             }
         }), 200
 
@@ -198,19 +178,19 @@ def login():
         if not data or not data.get('email') or not data.get('password'):
             return jsonify({'message': 'Missing email or password'}), 400
             
-        user = db.users.find_one({'email': data['email']})
+        user = db_session.query(User).filter_by(email=data['email']).first()
         logger.info(f"User found: {bool(user)}")
         
-        if user and bcrypt.check_password_hash(user['password'], data['password']):
-            access_token = create_access_token(identity=str(user['_id']))
-            logger.info(f"Login successful for user: {user['email']}")
+        if user and bcrypt.check_password_hash(user.password, data['password']):
+            access_token = create_access_token(identity=user.id)
+            logger.info(f"Login successful for user: {user.email}")
             return jsonify({
                 'message': 'Login successful',
                 'token': access_token,
                 'user': {
-                    'id': str(user['_id']),
-                    'email': user['email'],
-                    'is_filmmaker': user.get('is_filmmaker', False)
+                    'id': user.id,
+                    'email': user.email,
+                    'is_filmmaker': user.is_filmmaker
                 }
             }), 200
         
@@ -224,38 +204,38 @@ def login():
 @jwt_required()
 def get_user():
     current_user_id = get_jwt_identity()
-    user = db.users.find_one({'_id': ObjectId(current_user_id)})
+    user = db_session.query(User).filter_by(id=current_user_id).first()
     
     if not user:
         return jsonify({'message': 'User not found'}), 404
         
     return jsonify({
-        'id': str(user['_id']),
-        'email': user['email'],
-        'is_filmmaker': user.get('is_filmmaker', False)
+        'id': user.id,
+        'email': user.email,
+        'is_filmmaker': user.is_filmmaker
     })
 
 # Film routes
 @app.route('/api/films', methods=['GET'])
 def get_films():
-    films = db.films.find()
+    films = db_session.query(Film).all()
     return jsonify([{
-        'id': str(film['_id']),
-        'title': film['title'],
-        'description': film['description'],
-        'price': film['price'],
-        'film_type': film['film_type'],
-        'thumbnail_path': film['thumbnail_path'],
-        'creator_id': str(film['creator_id'])
+        'id': film.id,
+        'title': film.title,
+        'description': film.description,
+        'price': film.price,
+        'film_type': film.film_type,
+        'thumbnail_path': film.thumbnail_path,
+        'creator_id': film.creator_id
     } for film in films])
 
 @app.route('/api/upload', methods=['POST'])
 @jwt_required()
 def upload_film():
     current_user_id = get_jwt_identity()
-    user = db.users.find_one({'_id': ObjectId(current_user_id)})
+    user = db_session.query(User).filter_by(id=current_user_id).first()
     
-    if not user.get('is_filmmaker'):
+    if not user.is_filmmaker:
         return jsonify({'error': 'Unauthorized'}), 403
     
     if 'file' not in request.files:
@@ -267,18 +247,18 @@ def upload_film():
 @app.route('/api/films/<film_id>', methods=['GET'])
 @jwt_required()
 def get_film(film_id):
-    film = db.films.find_one({'_id': ObjectId(film_id)})
+    film = db_session.query(Film).filter_by(id=film_id).first()
     if not film:
         return jsonify({'error': 'Film not found'}), 404
         
     return jsonify({
-        'id': str(film['_id']),
-        'title': film['title'],
-        'description': film['description'],
-        'price': film['price'],
-        'film_type': film['film_type'],
-        'thumbnail_path': film['thumbnail_path'],
-        'creator_id': str(film['creator_id'])
+        'id': film.id,
+        'title': film.title,
+        'description': film.description,
+        'price': film.price,
+        'film_type': film.film_type,
+        'thumbnail_path': film.thumbnail_path,
+        'creator_id': film.creator_id
     })
 
 # Payment routes
@@ -287,14 +267,14 @@ def get_film(film_id):
 def create_payment():
     data = request.json
     film_id = data.get('film_id')
-    film = db.films.find_one({'_id': ObjectId(film_id)})
+    film = db_session.query(Film).filter_by(id=film_id).first()
     
     if not film:
         return jsonify({'error': 'Film not found'}), 404
     
     try:
         intent = stripe.PaymentIntent.create(
-            amount=int(film['price'] * 100),  # Convert to cents
+            amount=int(film.price * 100),  # Convert to cents
             currency='usd'
         )
         return jsonify({
@@ -307,19 +287,42 @@ def create_payment():
 @jwt_required()
 def watch_film(film_id):
     current_user_id = get_jwt_identity()
-    purchase = db.purchases.find_one({
-        'user_id': ObjectId(current_user_id),
-        'film_id': ObjectId(film_id)
-    })
+    purchase = db_session.query(Purchase).filter_by(user_id=current_user_id, film_id=film_id).first()
     
     if not purchase:
         return jsonify({'error': 'Not purchased'}), 403
         
-    film = db.films.find_one({'_id': ObjectId(film_id)})
+    film = db_session.query(Film).filter_by(id=film_id).first()
     if not film:
         return jsonify({'error': 'Film not found'}), 404
         
-    return send_file(film['file_path'])
+    return send_file(film.file_path)
+
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    email = Column(String, unique=True)
+    password = Column(String)
+    is_filmmaker = Column(Boolean)
+    created_at = Column(DateTime)
+
+class Film(Base):
+    __tablename__ = 'films'
+    id = Column(Integer, primary_key=True)
+    title = Column(String)
+    description = Column(String)
+    price = Column(Float)
+    film_type = Column(String)
+    thumbnail_path = Column(String)
+    creator_id = Column(Integer, ForeignKey('users.id'))
+    file_path = Column(String)
+
+class Purchase(Base):
+    __tablename__ = 'purchases'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'))
+    film_id = Column(Integer, ForeignKey('films.id'))
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))

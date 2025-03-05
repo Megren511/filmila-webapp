@@ -43,3 +43,16 @@ ENV/
 # Test files
 test-*.js
 passssss.txt
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+*.sql
+*.dump
+*.backup
+
+# PostgreSQL specific
+*.psql
+pg_data/
+postgres_data/
