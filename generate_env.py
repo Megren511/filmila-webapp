@@ -21,7 +21,7 @@ def generate_env_files():
     dev_vars = {
         'FLASK_ENV': 'development',
         'NODE_ENV': 'development',
-        'DATABASE_URL': 'postgresql://localhost:5432/filmila_db',
+        'DATABASE_URL': 'sqlite:///filmila.db',  # SQLite for development
         'JWT_SECRET_KEY': generate_secret_key(),
         'SECRET_KEY': generate_secret_key()
     }
@@ -30,9 +30,11 @@ def generate_env_files():
     prod_vars = {
         'FLASK_ENV': 'production',
         'NODE_ENV': 'production',
-        'DATABASE_URL': 'YOUR_PRODUCTION_DATABASE_URL',  # Set this in production
+        'DATABASE_URL': 'YOUR_PRODUCTION_DATABASE_URL',  # Replace with your production database URL
         'JWT_SECRET_KEY': generate_secret_key(),
-        'SECRET_KEY': generate_secret_key()
+        'SECRET_KEY': generate_secret_key(),
+        'FRONTEND_URL': 'https://filmila-webapp.onrender.com',
+        'REACT_APP_API_URL': 'https://filmila-webapp.onrender.com/api'
     }
 
     # Create .env file for development
@@ -42,15 +44,12 @@ def generate_env_files():
 
     # Create .env.production file
     with open('.env.production', 'w') as f:
-        for key, value in {**env_vars, **prod_vars}.items():
+        for key, value in prod_vars.items():  # Use only prod vars for production
             f.write(f'{key}={value}\n')
 
     print('Generated .env successfully!')
     print('Generated .env.production successfully!')
-    print('\nHere are your environment variables:\n')
-    for key in env_vars:
-        print(f'{key}={env_vars[key]}')
-    print('\nPlease create a .env file with these values.')
+    print('\nNOTE: Replace YOUR_PRODUCTION_DATABASE_URL in .env.production with your actual database URL')
 
 if __name__ == '__main__':
     generate_env_files()
