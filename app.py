@@ -50,7 +50,22 @@ else:
 # Configure JWT
 app.config["JWT_SECRET_KEY"] = os.getenv('JWT_SECRET_KEY')
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=1)
+app.config["JWT_TOKEN_LOCATION"] = ["headers"]
+app.config["JWT_HEADER_NAME"] = "Authorization"
+app.config["JWT_HEADER_TYPE"] = "Bearer"
 jwt = JWTManager(app)
+
+@jwt.user_identity_loader
+def user_identity_lookup(user_id):
+    return str(user_id)
+
+@jwt.user_lookup_loader
+def user_lookup_callback(_jwt_header, jwt_data):
+    try:
+        user_id = jwt_data["sub"]
+        return db_session.query(User).filter_by(id=int(user_id)).first()
+    except (KeyError, ValueError):
+        return None
 
 # Configure bcrypt
 bcrypt = Bcrypt(app)
@@ -150,7 +165,8 @@ def register():
         user_id = user_data.id
 
         # Generate token
-        token = create_access_token(identity=user_id)
+        token = create_access_token(identity=str(user_id))
+        logger.info(f"Created access token for user {user_id}")
 
         # Return success response
         return jsonify({
@@ -165,6 +181,7 @@ def register():
         }), 200
 
     except Exception as e:
+        db_session.rollback()
         logger.error(f"Registration error: {str(e)}")
         logger.exception("Full traceback:")
         return jsonify({'message': 'Server error during registration'}), 500
@@ -182,7 +199,7 @@ def login():
         logger.info(f"User found: {bool(user)}")
         
         if user and bcrypt.check_password_hash(user.password, data['password']):
-            access_token = create_access_token(identity=user.id)
+            access_token = create_access_token(identity=str(user.id))
             logger.info(f"Login successful for user: {user.email}")
             return jsonify({
                 'message': 'Login successful',
@@ -203,17 +220,24 @@ def login():
 @app.route('/api/user', methods=['GET'])
 @jwt_required()
 def get_user():
-    current_user_id = get_jwt_identity()
-    user = db_session.query(User).filter_by(id=current_user_id).first()
-    
-    if not user:
-        return jsonify({'message': 'User not found'}), 404
+    try:
+        current_user_id = get_jwt_identity()
+        logger.info(f"Getting user profile for ID: {current_user_id}")
         
-    return jsonify({
-        'id': user.id,
-        'email': user.email,
-        'is_filmmaker': user.is_filmmaker
-    })
+        user = db_session.query(User).filter_by(id=int(current_user_id)).first()
+        if not user:
+            logger.warning(f"User not found for ID: {current_user_id}")
+            return jsonify({'message': 'User not found'}), 404
+            
+        return jsonify({
+            'id': user.id,
+            'name': user.name,
+            'email': user.email,
+            'is_filmmaker': user.is_filmmaker
+        })
+    except Exception as e:
+        logger.error(f"Error in get_user: {str(e)}")
+        return jsonify({'message': 'Error retrieving user data'}), 500
 
 # Film routes
 @app.route('/api/films', methods=['GET'])
