@@ -55,6 +55,21 @@ services:
       - key: FLASK_ENV
         scope: RUN_TIME
         value: production
-      - key: MONGODB_URI
+      - key: DATABASE_URL
         scope: RUN_TIME
-        value: "mongodb+srv://megrenfilms:MV52eUzhYOxRHavW@cluster0.jlezl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+        type: SECRET
+      - key: JWT_SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+
+databases:
+  - name: filmila-db
+    engine: PG
+    version: "15"
+    production: true
+    cluster_name: filmila-cluster
+    db_name: filmila_db
+    db_user: filmila_user
