@@ -6,32 +6,33 @@ envs:
   scope: RUN_AND_BUILD_TIME
   value: app.py
 - key: FLASK_ENV
-  scope: RUN_AND_BUILD_TIME
+  scope: RUN_TIME
   value: production
-- key: MONGODB_URI
-  scope: RUN_AND_BUILD_TIME
-  type: SECRET
-  value: ${MONGODB_URI}
+- key: DATABASE_URL
+  scope: RUN_TIME
+  value: ${DATABASE_URL}
+- key: JWT_SECRET_KEY
+  scope: RUN_TIME
+  value: ${JWT_SECRET_KEY}
 - key: SECRET_KEY
   scope: RUN_AND_BUILD_TIME
   type: SECRET
   value: ${SECRET_KEY}
-- key: JWT_SECRET_KEY
-  scope: RUN_AND_BUILD_TIME
-  type: SECRET
-  value: ${JWT_SECRET_KEY}
 - key: FRONTEND_URL
   scope: RUN_AND_BUILD_TIME
-  value: https://filmila-webapp.ondigitalocean.app
+  value: https://sea-turtle-app-879b6.ondigitalocean.app
 - key: REACT_APP_API_URL
   scope: RUN_AND_BUILD_TIME
-  value: https://filmila-webapp.ondigitalocean.app/api
+  value: https://sea-turtle-app-879b6.ondigitalocean.app/api
 - key: NODE_ENV
   scope: RUN_AND_BUILD_TIME
   value: production
 - key: PORT
   scope: RUN_AND_BUILD_TIME
   value: "8080"
+- key: ALLOWED_ORIGINS
+  scope: RUN_TIME
+  value: https://sea-turtle-app-879b6.ondigitalocean.app
 features:
 - buildpack-stack=ubuntu-22
 ingress:
@@ -53,7 +54,7 @@ services:
     cd ..
   environment_slug: python
   github:
-    branch: main
+    branch: clean-main
     deploy_on_push: true
     repo: Megren511/filmila-webapp
   http_port: 8080
