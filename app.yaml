@@ -1,0 +1,24 @@
+name: filmila-webapp
+region: syd
+
+services:
+- name: filmila-webapp
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: Megren511/filmila-webapp
+  build_command: >
+    python -m pip install --upgrade pip &&
+    pip install -r requirements.txt &&
+    cd frontend &&
+    npm install &&
+    npm run build &&
+    cd ..
+  run_command: gunicorn --config gunicorn_config.py wsgi:app
+  environment_slug: python
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  http_port: 8080
+  routes:
+  - path: /
+    preserve_path_prefix: true

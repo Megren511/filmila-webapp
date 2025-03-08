@@ -1,0 +1,75 @@
+services:
+  - name: filmila-webapp
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    git:
+      repo: "https://github.com/Megren511/filmila-webapp.git"
+      branch: main
+    build_command: |
+      # Set Node.js version
+      . $HOME/.nvm/nvm.sh
+      nvm install 18
+      nvm use 18
+      
+      # Install Python dependencies
+      python -m pip install --upgrade pip
+      pip install -r requirements.txt
+      
+      # Install root dependencies
+      npm ci
+      
+      # Install and build frontend
+      cd frontend
+      npm ci --legacy-peer-deps
+      npm run build
+      cd ..
+    run_command: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2
+    envs:
+      # Build-time environment variables
+      - key: NODE_ENV
+        scope: BUILD_TIME
+        value: production
+      - key: REACT_APP_API_URL
+        scope: BUILD_TIME
+        value: ${_self.PUBLIC_URL}/api
+      - key: CI
+        scope: BUILD_TIME
+        value: false
+      - key: NPM_CONFIG_PRODUCTION
+        scope: BUILD_TIME
+        value: false
+      - key: PYTHON_VERSION
+        scope: BUILD_TIME
+        value: "3.11.7"
+      - key: NODE_VERSION
+        scope: BUILD_TIME
+        value: "18.x"
+
+      # Runtime environment variables
+      - key: PORT
+        scope: RUN_TIME
+        value: "8080"
+      - key: FLASK_APP
+        scope: RUN_TIME
+        value: app.py
+      - key: FLASK_ENV
+        scope: RUN_TIME
+        value: production
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+      - key: JWT_SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+
+databases:
+  - name: filmila-db
+    engine: PG
+    version: "15"
+    production: true
+    cluster_name: filmila-cluster
+    db_name: filmila_db
+    db_user: filmila_user
