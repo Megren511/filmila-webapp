@@ -7,9 +7,11 @@ import os
 import logging
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
 import stripe
 import time
+
+# Import models
+from models import Base, User, Film, Purchase
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -80,19 +82,18 @@ def init_db():
 
         engine = create_engine(database_url)
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-        Base = declarative_base()
         
         # Create all tables
         Base.metadata.create_all(bind=engine)
         
         logger.info("Successfully connected to PostgreSQL")
-        return SessionLocal, Base
+        return SessionLocal()
     except Exception as e:
         logger.error(f"Failed to connect to PostgreSQL: {str(e)}")
         raise
 
 # Initialize database connection
-db_session, Base = init_db()
+db_session = init_db()
 
 # Serve React static files
 @app.route('/')
@@ -321,32 +322,6 @@ def watch_film(film_id):
         return jsonify({'error': 'Film not found'}), 404
         
     return send_file(film.file_path)
-
-class User(Base):
-    __tablename__ = 'users'
-    id = Column(Integer, primary_key=True)
-    name = Column(String)
-    email = Column(String, unique=True)
-    password = Column(String)
-    is_filmmaker = Column(Boolean)
-    created_at = Column(DateTime)
-
-class Film(Base):
-    __tablename__ = 'films'
-    id = Column(Integer, primary_key=True)
-    title = Column(String)
-    description = Column(String)
-    price = Column(Float)
-    film_type = Column(String)
-    thumbnail_path = Column(String)
-    creator_id = Column(Integer, ForeignKey('users.id'))
-    file_path = Column(String)
-
-class Purchase(Base):
-    __tablename__ = 'purchases'
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('users.id'))
-    film_id = Column(Integer, ForeignKey('films.id'))
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))
