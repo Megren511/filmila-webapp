@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -27,5 +27,17 @@ class Film(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="films")
+    purchases = relationship("Purchase", back_populates="film")
+
+class Purchase(Base):
+    __tablename__ = "purchases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    film_id = Column(Integer, ForeignKey("films.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+    film = relationship("Film", back_populates="purchases")
 
 User.films = relationship("Film", back_populates="user")
