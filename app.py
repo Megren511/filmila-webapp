@@ -5,17 +5,54 @@ from flask_bcrypt import Bcrypt
 from datetime import datetime, timedelta
 import os
 import logging
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, text
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.exc import OperationalError
 import stripe
 import time
+from urllib.parse import urlparse
+from dotenv import load_dotenv
 
-# Import models
-from models import Base, User, Film, Purchase
+# Load environment variables
+load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
+
+# Initialize SQLAlchemy
+Base = declarative_base()
+
+# Define models
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    email = Column(String, unique=True)
+    password = Column(String)
+    is_filmmaker = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class Film(Base):
+    __tablename__ = 'films'
+    id = Column(Integer, primary_key=True)
+    title = Column(String)
+    description = Column(String)
+    price = Column(Float)
+    film_type = Column(String)
+    thumbnail_path = Column(String)
+    creator_id = Column(Integer, ForeignKey('users.id'))
+    file_path = Column(String)
+
+class Purchase(Base):
+    __tablename__ = 'purchases'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'))
+    film_id = Column(Integer, ForeignKey('films.id'))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 # Check required environment variables
 required_vars = ['DATABASE_URL', 'JWT_SECRET_KEY']
@@ -41,7 +78,7 @@ else:
     CORS(app, resources={
         r"/api/*": {
             "origins": [
-                "https://sea-turtle-app-879b6.ondigitalocean.app"
+                "https://filmila-webapp.onrender.com"
             ],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"],
@@ -72,28 +109,82 @@ def user_lookup_callback(_jwt_header, jwt_data):
 # Configure bcrypt
 bcrypt = Bcrypt(app)
 
-# Configure PostgreSQL
+# Configure database
 def init_db():
-    """Initialize PostgreSQL connection"""
-    try:
-        database_url = os.getenv('DATABASE_URL')
-        if not database_url:
-            raise ValueError("DATABASE_URL environment variable is not set")
+    """Initialize database connection with retry logic"""
+    max_retries = 3
+    retry_delay = 5  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Initializing database connection (attempt {attempt + 1}/{max_retries})...")
+            
+            # Use SQLite for development, PostgreSQL for production
+            if os.getenv('FLASK_ENV') == 'development':
+                database_url = 'sqlite:///filmila.db'
+                logger.info("Using SQLite database for development")
+                engine_args = {
+                    'echo': True  # SQL logging in development
+                }
+            else:
+                database_url = os.getenv('DATABASE_URL')
+                if not database_url:
+                    raise ValueError("DATABASE_URL environment variable is not set")
+                # Handle potential "postgres://" URLs from Render
+                if database_url.startswith('postgres://'):
+                    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+                logger.info(f"Using PostgreSQL database: {database_url.split('@')[1]}")
+                
+                # PostgreSQL-specific settings
+                engine_args = {
+                    'pool_size': 5,
+                    'max_overflow': 10,
+                    'pool_timeout': 30,
+                    'pool_recycle': 1800,  # Recycle connections every 30 minutes
+                    'echo': False,  # SQL logging disabled in production
+                    'connect_args': {
+                        'connect_timeout': 10,  # Connection timeout in seconds
+                        'sslmode': 'require'    # Enforce SSL
+                    }
+                }
+            
+            engine = create_engine(database_url, **engine_args)
+            
+            # Test the connection
+            with engine.connect() as conn:
+                result = conn.execute(text("SELECT 1")).fetchone()
+                if result and result[0] == 1:
+                    logger.info("Successfully connected to database")
+                else:
+                    raise Exception("Database connection test failed")
+            
+            # Create all tables
+            Base.metadata.create_all(bind=engine)
+            logger.info("Database tables created successfully")
+            
+            # Create session factory
+            SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+            return SessionLocal()
+            
+        except OperationalError as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"Database connection failed (attempt {attempt + 1}): {str(e)}")
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                logger.error("Failed to connect to database after all retries")
+                raise
+        except Exception as e:
+            logger.error(f"Database initialization error: {str(e)}")
+            raise
 
-        engine = create_engine(database_url)
-        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-        
-        # Create all tables
-        Base.metadata.create_all(bind=engine)
-        
-        logger.info("Successfully connected to PostgreSQL")
-        return SessionLocal()
-    except Exception as e:
-        logger.error(f"Failed to connect to PostgreSQL: {str(e)}")
-        raise
-
-# Initialize database connection
-db_session = init_db()
+# Initialize database session
+try:
+    db_session = init_db()
+    logger.info("Database initialization completed successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize database: {str(e)}")
+    raise
 
 # Serve React static files
 @app.route('/')
@@ -323,32 +414,6 @@ def watch_film(film_id):
         
     return send_file(film.file_path)
 
-if __name__ == '__main__':
-    port = int(os.getenv('PORT', 8080))
-    debug = os.getenv('FLASK_ENV') == 'development'
-    app.run(host='0.0.0.0', port=port, debug=debug)
-            film_id=film_id
-        ).first()
-        
-        film = db_session.query(Film).filter_by(id=film_id).first()
-        if not film:
-            return jsonify({'message': 'Film not found'}), 404
-            
-        return jsonify({
-            'id': film.id,
-            'title': film.title,
-            'description': film.description,
-            'price': film.price,
-            'film_type': film.film_type,
-            'thumbnail_path': film.thumbnail_path,
-            'creator_id': film.creator_id,
-            'purchased': bool(purchase)
-        }), 200
-    except Exception as e:
-        logger.error(f"Error fetching film: {str(e)}")
-        return jsonify({'message': 'Server error fetching film'}), 500
-
-# Payment routes
 @app.route('/api/payments', methods=['POST'])
 @jwt_required()
 def create_payment():
