@@ -10,9 +10,11 @@ envs:
   value: production
 - key: DATABASE_URL
   scope: RUN_TIME
+  type: SECRET
   value: ${DATABASE_URL}
 - key: JWT_SECRET_KEY
   scope: RUN_TIME
+  type: SECRET
   value: ${JWT_SECRET_KEY}
 - key: SECRET_KEY
   scope: RUN_AND_BUILD_TIME
@@ -33,6 +35,13 @@ envs:
 - key: ALLOWED_ORIGINS
   scope: RUN_TIME
   value: https://sea-turtle-app-879b6.ondigitalocean.app
+- key: UPLOAD_FOLDER
+  scope: RUN_AND_BUILD_TIME
+  value: uploads
+- key: STRIPE_SECRET_KEY
+  scope: RUN_TIME
+  type: SECRET
+  value: ${STRIPE_SECRET_KEY}
 features:
 - buildpack-stack=ubuntu-22
 health_check:
