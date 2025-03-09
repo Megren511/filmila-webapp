@@ -14,8 +14,8 @@ load_dotenv()
 
 def init_database():
     """Initialize the PostgreSQL database with retry logic"""
-    max_retries = 3
-    retry_delay = 5  # seconds
+    max_retries = 5  # Increased retries for DigitalOcean deployment
+    retry_delay = 10  # seconds
     
     for attempt in range(max_retries):
         try:
@@ -26,18 +26,35 @@ def init_database():
             if not database_url:
                 raise ValueError("DATABASE_URL environment variable is not set")
             
+            # Skip if MongoDB URL is found (from old configuration)
+            if 'mongodb' in database_url:
+                logger.error("Found MongoDB URL - please update DATABASE_URL to PostgreSQL connection string")
+                raise ValueError("Invalid database type: MongoDB URL detected, PostgreSQL required")
+            
             # Handle potential "postgres://" URLs from DigitalOcean
             if database_url.startswith('postgres://'):
                 database_url = database_url.replace('postgres://', 'postgresql://', 1)
             
-            # Create engine with SSL required
+            # Create engine with SSL required and TCP keepalive
             engine = create_engine(
                 database_url,
                 pool_size=5,
                 max_overflow=10,
                 pool_timeout=30,
-                connect_args={'sslmode': 'require'}
+                pool_pre_ping=True,  # Enable connection health checks
+                connect_args={
+                    'sslmode': 'require',
+                    'keepalives': 1,
+                    'keepalives_idle': 30,
+                    'keepalives_interval': 10,
+                    'keepalives_count': 5
+                }
             )
+            
+            # Test connection
+            with engine.connect() as conn:
+                conn.execute("SELECT 1")
+                logger.info("Database connection test successful")
             
             # Create all tables
             Base.metadata.create_all(bind=engine)
@@ -54,4 +71,9 @@ def init_database():
                 raise
 
 if __name__ == "__main__":
-    init_database()
+    try:
+        init_database()
+        logger.info("Database initialization completed successfully")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {str(e)}")
+        raise
