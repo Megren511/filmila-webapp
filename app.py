@@ -226,6 +226,26 @@ def server_error(e):
     logger.error(f"Server error: {str(e)}")
     return jsonify({"error": "Internal server error"}), 500
 
+# Health check endpoint
+@app.route('/api/health')
+def health_check():
+    """Health check endpoint for DigitalOcean"""
+    try:
+        # Test database connection
+        db_session.execute(text("SELECT 1"))
+        return jsonify({
+            "status": "healthy",
+            "database": "connected",
+            "timestamp": datetime.utcnow().isoformat()
+        }), 200
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }), 500
+
 # Authentication routes
 @app.route('/api/register', methods=['POST', 'OPTIONS'])
 def register():
