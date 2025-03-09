@@ -54,7 +54,7 @@ services:
     cd ..
   environment_slug: python
   github:
-    branch: clean-main
+    branch: digitalocean-deploy
     deploy_on_push: true
     repo: Megren511/filmila-webapp
   http_port: 8080
