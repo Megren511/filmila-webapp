@@ -35,6 +35,13 @@ envs:
   value: https://sea-turtle-app-879b6.ondigitalocean.app
 features:
 - buildpack-stack=ubuntu-22
+health_check:
+  http_path: /api/health
+  initial_delay_seconds: 30
+  period_seconds: 10
+  success_threshold: 1
+  failure_threshold: 3
+  timeout_seconds: 5
 ingress:
   rules:
   - component:
