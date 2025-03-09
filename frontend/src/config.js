@@ -3,7 +3,7 @@ const config = {
     apiBaseUrl: 'http://localhost:8080/api'
   },
   production: {
-    apiBaseUrl: 'https://filmila-webapp.onrender.com/api'
+    apiBaseUrl: 'https://sea-turtle-app-879b6.ondigitalocean.app/api'
   }
 };
 

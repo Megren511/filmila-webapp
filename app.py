@@ -74,11 +74,11 @@ if os.getenv('FLASK_ENV') == 'development':
         }
     })
 else:
-    # Production CORS settings
+    # Production CORS settings for DigitalOcean
     CORS(app, resources={
         r"/api/*": {
             "origins": [
-                "https://filmila-webapp.onrender.com"
+                "https://sea-turtle-app-879b6.ondigitalocean.app"
             ],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"],
@@ -119,34 +119,28 @@ def init_db():
         try:
             logger.info(f"Initializing database connection (attempt {attempt + 1}/{max_retries})...")
             
-            # Use SQLite for development, PostgreSQL for production
-            if os.getenv('FLASK_ENV') == 'development':
-                database_url = 'sqlite:///filmila.db'
-                logger.info("Using SQLite database for development")
-                engine_args = {
-                    'echo': True  # SQL logging in development
+            # Get database URL from environment
+            database_url = os.getenv('DATABASE_URL')
+            if not database_url:
+                raise ValueError("DATABASE_URL environment variable is not set")
+            
+            # Handle potential "postgres://" URLs from DigitalOcean
+            if database_url.startswith('postgres://'):
+                database_url = database_url.replace('postgres://', 'postgresql://', 1)
+            logger.info(f"Using PostgreSQL database: {database_url.split('@')[1]}")
+            
+            # PostgreSQL-specific settings
+            engine_args = {
+                'pool_size': 5,
+                'max_overflow': 10,
+                'pool_timeout': 30,
+                'pool_recycle': 1800,  # Recycle connections every 30 minutes
+                'echo': False,  # SQL logging disabled in production
+                'connect_args': {
+                    'connect_timeout': 10,  # Connection timeout in seconds
+                    'sslmode': 'require'    # Enforce SSL
                 }
-            else:
-                database_url = os.getenv('DATABASE_URL')
-                if not database_url:
-                    raise ValueError("DATABASE_URL environment variable is not set")
-                # Handle potential "postgres://" URLs from Render
-                if database_url.startswith('postgres://'):
-                    database_url = database_url.replace('postgres://', 'postgresql://', 1)
-                logger.info(f"Using PostgreSQL database: {database_url.split('@')[1]}")
-                
-                # PostgreSQL-specific settings
-                engine_args = {
-                    'pool_size': 5,
-                    'max_overflow': 10,
-                    'pool_timeout': 30,
-                    'pool_recycle': 1800,  # Recycle connections every 30 minutes
-                    'echo': False,  # SQL logging disabled in production
-                    'connect_args': {
-                        'connect_timeout': 10,  # Connection timeout in seconds
-                        'sslmode': 'require'    # Enforce SSL
-                    }
-                }
+            }
             
             engine = create_engine(database_url, **engine_args)
             
