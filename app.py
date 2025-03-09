@@ -112,8 +112,8 @@ bcrypt = Bcrypt(app)
 # Configure database
 def init_db():
     """Initialize database connection with retry logic"""
-    max_retries = 3
-    retry_delay = 5  # seconds
+    max_retries = 5  # Increased retries for DigitalOcean deployment
+    retry_delay = 10  # seconds
     
     for attempt in range(max_retries):
         try:
@@ -127,18 +127,26 @@ def init_db():
             # Handle potential "postgres://" URLs from DigitalOcean
             if database_url.startswith('postgres://'):
                 database_url = database_url.replace('postgres://', 'postgresql://', 1)
-            logger.info(f"Using PostgreSQL database: {database_url.split('@')[1]}")
             
-            # PostgreSQL-specific settings
+            # Log database host (without credentials)
+            db_url_parts = urlparse(database_url)
+            logger.info(f"Using PostgreSQL database: {db_url_parts.hostname}")
+            
+            # PostgreSQL-specific settings optimized for DigitalOcean
             engine_args = {
-                'pool_size': 5,
-                'max_overflow': 10,
-                'pool_timeout': 30,
+                'pool_size': 10,
+                'max_overflow': 20,
+                'pool_timeout': 60,
                 'pool_recycle': 1800,  # Recycle connections every 30 minutes
+                'pool_pre_ping': True,  # Enable connection health checks
                 'echo': False,  # SQL logging disabled in production
                 'connect_args': {
-                    'connect_timeout': 10,  # Connection timeout in seconds
-                    'sslmode': 'require'    # Enforce SSL
+                    'connect_timeout': 30,  # Increased timeout for DigitalOcean
+                    'sslmode': 'require',   # Enforce SSL
+                    'keepalives': 1,        # Enable TCP keepalives
+                    'keepalives_idle': 60,  # Idle time before sending keepalives
+                    'keepalives_interval': 10,  # Time between keepalives
+                    'keepalives_count': 5    # Keepalive retries before dropping
                 }
             }
             
@@ -146,11 +154,18 @@ def init_db():
             
             # Test the connection
             with engine.connect() as conn:
+                # Test basic connectivity
                 result = conn.execute(text("SELECT 1")).fetchone()
-                if result and result[0] == 1:
-                    logger.info("Successfully connected to database")
-                else:
+                if not (result and result[0] == 1):
                     raise Exception("Database connection test failed")
+                
+                # Test SSL mode
+                ssl_result = conn.execute(text("SHOW ssl")).fetchone()
+                logger.info(f"SSL Status: {ssl_result[0] if ssl_result else 'unknown'}")
+                
+                # Log PostgreSQL version
+                version = conn.execute(text("SHOW server_version")).fetchone()
+                logger.info(f"PostgreSQL Version: {version[0] if version else 'unknown'}")
             
             # Create all tables
             Base.metadata.create_all(bind=engine)
@@ -158,7 +173,17 @@ def init_db():
             
             # Create session factory
             SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-            return SessionLocal()
+            db_session = SessionLocal()
+            
+            # Test session by querying users table
+            try:
+                db_session.execute(text("SELECT COUNT(*) FROM users"))
+                logger.info("Successfully verified users table access")
+            except Exception as e:
+                logger.warning(f"Users table access test failed: {str(e)}")
+                # Don't raise here, table might not exist yet
+            
+            return db_session
             
         except OperationalError as e:
             if attempt < max_retries - 1:
